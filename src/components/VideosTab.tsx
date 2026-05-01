@@ -1,0 +1,466 @@
+'use client';
+
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Video, UploadCloud, Trash2, Loader2, PlayCircle } from 'lucide-react';
+import { AlertDialog } from './Modal';
+import { useToast } from './Toast';
+import { formatDuration } from '@/lib/utils';
+
+interface Module {
+  id: string;
+  order_index: number;
+  title: string;
+  duration_seconds: number | null;
+  video_id: string;
+}
+
+export function VideosTab() {
+  const { t } = useTranslation();
+  const { showToast } = useToast();
+  const [modules, setModules] = useState<Module[]>([]);
+  const [loading, setLoading] = useState(true);
+  
+  // Upload State
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const dropZoneRef = useRef<HTMLDivElement>(null);
+
+  // Form State (after upload)
+  const [showForm, setShowForm] = useState(false);
+  const [uploadedVideoId, setUploadedVideoId] = useState<string | null>(null);
+  const [uploadedDuration, setUploadedDuration] = useState<number | null>(null);
+  const [formTitle, setFormTitle] = useState('');
+  const [formOrder, setFormOrder] = useState<string>('');
+  const [formErrors, setFormErrors] = useState<{ title?: string; order?: string }>({});
+  const [savingModule, setSavingModule] = useState(false);
+
+  // Delete State
+  const [deleteTarget, setDeleteTarget] = useState<Module | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const fetchModules = useCallback(async () => {
+    try {
+      const res = await fetch('/api/admin/modules');
+      if (res.ok) {
+        const data = await res.json();
+        setModules(data.modules || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch modules:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchModules();
+  }, [fetchModules]);
+
+  const handleFileUpload = async (file: File) => {
+    setUploadError(null);
+    setUploadProgress(0);
+
+    // Validate size (4 GB = 4 * 1024 * 1024 * 1024 bytes)
+    if (file.size > 4 * 1024 * 1024 * 1024) {
+      setUploadError(t('videos.upload.error.size'));
+      return;
+    }
+
+    // Validate type (MP4/MOV)
+    if (!['video/mp4', 'video/quicktime'].includes(file.type)) {
+      setUploadError(t('videos.upload.error.format'));
+      return;
+    }
+
+    setIsUploading(true);
+
+    try {
+      // Step 1: Get upload URL
+      const urlRes = await fetch('/api/admin/upload-url', { method: 'POST' });
+      if (!urlRes.ok) throw new Error('Failed to get upload URL');
+      const { uploadURL, uid } = await urlRes.json();
+
+      // Step 2: Direct Upload via XMLHttpRequest (to track progress)
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.upload.addEventListener('progress', (e) => {
+          if (e.lengthComputable) {
+            setUploadProgress(Math.round((e.loaded * 100) / e.total));
+          }
+        });
+        xhr.addEventListener('load', () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve();
+          } else {
+            reject(new Error('Upload failed'));
+          }
+        });
+        xhr.addEventListener('error', () => reject(new Error('Upload failed')));
+        xhr.open('POST', uploadURL);
+        const formData = new FormData();
+        formData.append('file', file);
+        xhr.send(formData);
+      });
+
+      setUploadedVideoId(uid);
+      showToast(t('videos.upload.success'), 'success');
+      
+      // Step 3: Fetch duration (polling since Cloudflare needs time to process)
+      let durationFetched = false;
+      let attempts = 0;
+      const maxAttempts = 10;
+      
+      const pollDuration = async () => {
+        if (durationFetched || attempts >= maxAttempts) return;
+        attempts++;
+        try {
+          const infoRes = await fetch(`/api/admin/video-info/${uid}`);
+          if (infoRes.ok) {
+            const infoData = await infoRes.json();
+            if (infoData.duration) {
+              setUploadedDuration(infoData.duration);
+              durationFetched = true;
+            }
+          }
+        } catch (e) {
+          console.error('Polling duration failed:', e);
+        }
+        if (!durationFetched && attempts < maxAttempts) {
+          setTimeout(pollDuration, 3000); // Poll every 3 seconds
+        }
+      };
+
+      pollDuration();
+
+      // Step 4: Show form
+      setFormTitle(file.name.replace(/\.[^/.]+$/, "")); // default title
+      setFormOrder((modules.length > 0 ? Math.max(...modules.map(m => m.order_index)) + 1 : 1).toString());
+      setShowForm(true);
+
+    } catch (err) {
+      console.error(err);
+      setUploadError(t('videos.upload.error.failed'));
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (dropZoneRef.current) dropZoneRef.current.classList.add('border-silver-blue', 'bg-silver-blue/5');
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (dropZoneRef.current) dropZoneRef.current.classList.remove('border-silver-blue', 'bg-silver-blue/5');
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (dropZoneRef.current) dropZoneRef.current.classList.remove('border-silver-blue', 'bg-silver-blue/5');
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleFileUpload(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleSaveModule = async () => {
+    const errors: { title?: string; order?: string } = {};
+    if (!formTitle.trim()) errors.title = t('modal.error.required');
+    if (!formOrder || isNaN(Number(formOrder))) errors.order = t('modal.error.required');
+
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      return;
+    }
+
+    setSavingModule(true);
+    setFormErrors({});
+
+    try {
+      const res = await fetch('/api/admin/modules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: formTitle.trim(),
+          order_index: parseInt(formOrder, 10),
+          video_id: uploadedVideoId,
+          duration_seconds: uploadedDuration,
+        }),
+      });
+
+      if (res.status === 409) {
+        setFormErrors({ order: t('videos.form.order.duplicate') });
+        return;
+      }
+
+      if (!res.ok) throw new Error('Failed to save module');
+
+      const data = await res.json();
+      setModules((prev) => [...prev, data.module].sort((a, b) => a.order_index - b.order_index));
+      setShowForm(false);
+      setUploadedVideoId(null);
+      showToast(t('toast.module.created'), 'success');
+    } catch {
+      showToast(t('toast.error.generic'), 'error');
+    } finally {
+      setSavingModule(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+
+    try {
+      const res = await fetch(`/api/admin/modules/${deleteTarget.id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Delete failed');
+
+      setModules((prev) => prev.filter(m => m.id !== deleteTarget.id));
+      showToast(t('toast.module.deleted'), 'success');
+    } catch {
+      showToast(t('toast.error.generic'), 'error');
+    } finally {
+      setDeleting(false);
+      setDeleteTarget(null);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-8 h-8 text-silver-blue animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="animate-fade-in space-y-8">
+      {/* Header */}
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 bg-silver-blue/10 rounded-xl flex items-center justify-center">
+          <Video className="w-5 h-5 text-silver-blue" />
+        </div>
+        <h1 className="text-2xl font-bold text-cherry-brown" style={{ fontFamily: 'Poppins, sans-serif' }}>
+          {t('videos.title')}
+        </h1>
+      </div>
+
+      {/* Upload Zone */}
+      {!showForm ? (
+        <div
+          ref={dropZoneRef}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          className={`
+            border-2 border-dashed rounded-2xl p-8 text-center transition-colors
+            ${isUploading ? 'border-silver-blue bg-silver-blue/5' : 'border-card-border bg-white'}
+          `}
+        >
+          {isUploading ? (
+            <div className="flex flex-col items-center gap-4">
+              <Loader2 className="w-10 h-10 text-silver-blue animate-spin" />
+              <div className="w-full max-w-xs">
+                <div className="flex justify-between text-sm font-medium mb-2 text-cherry-brown">
+                  <span>{t('videos.upload.progress')}</span>
+                  <span>{uploadProgress}%</span>
+                </div>
+                <div className="h-2 bg-beige-skin/30 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-silver-blue transition-all duration-300 ease-out"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-4">
+              <div className="w-16 h-16 bg-snow-white rounded-full flex items-center justify-center">
+                <UploadCloud className="w-8 h-8 text-muted-fg" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-cherry-brown mb-1" style={{ fontFamily: 'Poppins, sans-serif' }}>
+                  {t('videos.upload.label')}
+                </p>
+              </div>
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={(e) => e.target.files && handleFileUpload(e.target.files[0])}
+                accept="video/mp4,video/quicktime"
+                className="hidden"
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="px-6 py-2.5 bg-silver-blue text-white rounded-xl text-sm font-semibold hover:bg-silver-blue-hover transition-colors shadow-sm"
+                style={{ fontFamily: 'Poppins, sans-serif' }}
+              >
+                {t('videos.upload.browse')}
+              </button>
+              {uploadError && <p className="text-sm text-destructive mt-2">{uploadError}</p>}
+            </div>
+          )}
+        </div>
+      ) : (
+        /* Form after upload */
+        <div className="bg-white rounded-2xl border border-card-border p-6 shadow-sm animate-scale-in">
+          <div className="flex items-center gap-2 mb-6">
+            <CheckCircle className="w-5 h-5 text-status-active" />
+            <h3 className="text-lg font-bold text-cherry-brown" style={{ fontFamily: 'Poppins, sans-serif' }}>
+              {t('videos.upload.success')}
+            </h3>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div>
+              <label className="block text-sm font-medium text-cherry-brown mb-1.5" style={{ fontFamily: 'Raleway, sans-serif' }}>
+                {t('videos.form.title')}
+              </label>
+              <input
+                type="text"
+                value={formTitle}
+                onChange={(e) => { setFormTitle(e.target.value); setFormErrors((p) => ({ ...p, title: undefined })); }}
+                className={`w-full px-4 py-2.5 rounded-xl border text-sm transition-colors ${formErrors.title ? 'border-destructive' : 'border-input-border'}`}
+                style={{ fontFamily: 'Raleway, sans-serif' }}
+              />
+              {formErrors.title && <p className="mt-1 text-xs text-destructive">{formErrors.title}</p>}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-cherry-brown mb-1.5" style={{ fontFamily: 'Raleway, sans-serif' }}>
+                {t('videos.form.order')}
+              </label>
+              <input
+                type="number"
+                value={formOrder}
+                onChange={(e) => { setFormOrder(e.target.value); setFormErrors((p) => ({ ...p, order: undefined })); }}
+                className={`w-full px-4 py-2.5 rounded-xl border text-sm transition-colors ${formErrors.order ? 'border-destructive' : 'border-input-border'}`}
+                style={{ fontFamily: 'Raleway, sans-serif' }}
+              />
+              {formErrors.order && <p className="mt-1 text-xs text-destructive">{formErrors.order}</p>}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-cherry-brown mb-1.5" style={{ fontFamily: 'Raleway, sans-serif' }}>
+                {t('videos.col.duration')}
+              </label>
+              <div className="px-4 py-2.5 bg-snow-white border border-input-border rounded-xl text-sm text-cherry-brown flex items-center gap-2">
+                {!uploadedDuration ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-silver-blue" />
+                    <span className="text-muted-fg italic">Processing...</span>
+                  </>
+                ) : (
+                  <span>{formatDuration(uploadedDuration)}</span>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="flex justify-end mt-6 gap-3">
+            <button
+              onClick={() => { setShowForm(false); setUploadedVideoId(null); }}
+              className="px-6 py-2.5 text-sm font-semibold rounded-lg border border-input-border text-cherry-brown hover:bg-snow-white transition-colors"
+              style={{ fontFamily: 'Poppins, sans-serif' }}
+            >
+              {t('modal.cancel')}
+            </button>
+            <button
+              onClick={handleSaveModule}
+              disabled={savingModule}
+              className="flex items-center gap-2 px-6 py-2.5 bg-silver-blue text-white rounded-xl text-sm font-semibold hover:bg-silver-blue-hover transition-colors shadow-sm disabled:opacity-50"
+              style={{ fontFamily: 'Poppins, sans-serif' }}
+            >
+              {savingModule && <Loader2 className="w-4 h-4 animate-spin" />}
+              {t('videos.form.submit')}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Table */}
+      <div className="bg-white rounded-2xl border border-card-border shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-beige-skin bg-snow-white/50">
+                <th className="px-6 py-4 text-left text-xs font-semibold text-muted-fg uppercase tracking-wider w-16" style={{ fontFamily: 'Poppins, sans-serif' }}>
+                  {t('videos.col.order')}
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-muted-fg uppercase tracking-wider" style={{ fontFamily: 'Poppins, sans-serif' }}>
+                  {t('videos.col.title')}
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-muted-fg uppercase tracking-wider" style={{ fontFamily: 'Poppins, sans-serif' }}>
+                  {t('videos.col.duration')}
+                </th>
+                <th className="px-6 py-4 text-right text-xs font-semibold text-muted-fg uppercase tracking-wider" style={{ fontFamily: 'Poppins, sans-serif' }}>
+                  {t('videos.col.actions')}
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-beige-skin/50">
+              {modules.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="px-6 py-12 text-center text-muted-fg text-sm">
+                    {t('videos.title')} — No modules yet
+                  </td>
+                </tr>
+              ) : (
+                modules.map((module, index) => (
+                  <tr
+                    key={module.id}
+                    className="hover:bg-snow-white/50 transition-colors"
+                    style={{ 
+                      animationDelay: `${index * 50}ms`, 
+                      animationName: 'fadeIn',
+                      animationDuration: '0.3s',
+                      animationTimingFunction: 'ease-out',
+                      animationFillMode: 'forwards'
+                    }}
+                  >
+                    <td className="px-6 py-4 text-sm font-medium text-cherry-brown">
+                      {module.order_index}
+                    </td>
+                    <td className="px-6 py-4 text-sm font-medium text-cherry-brown">
+                      <div className="flex items-center gap-2">
+                        <PlayCircle className="w-4 h-4 text-silver-blue" />
+                        {module.title}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-muted-fg">
+                      {formatDuration(module.duration_seconds)}
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <button
+                        onClick={() => setDeleteTarget(module)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-destructive bg-destructive-bg rounded-lg hover:bg-red-100 transition-colors"
+                        style={{ fontFamily: 'Poppins, sans-serif' }}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        {t('videos.action.delete')}
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <AlertDialog
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDelete}
+        title={t('videos.confirm.delete')}
+        description={t('videos.confirm.delete.desc')}
+        confirmText={t('videos.action.delete')}
+        cancelText={t('modal.cancel')}
+        isDestructive
+        isLoading={deleting}
+      />
+    </div>
+  );
+}
+
+// Ensure CheckCircle is imported correctly
+import { CheckCircle } from 'lucide-react';

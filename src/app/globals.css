@@ -1,26 +1,191 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Raleway:wght@300;400;500;600&display=swap');
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* METCARE Brand Colors */
+  --snow-white: #ECEBE9;
+  --beige-skin: #DECDBB;
+  --silver-blue: #6A88A4;
+  --silver-blue-hover: #5A7894;
+  --cherry-brown: #2B1517;
+  --cherry-brown-light: #3D2224;
+
+  /* Semantic tokens */
+  --background: #ECEBE9;
+  --foreground: #2B1517;
+  --card-bg: #ffffff;
+  --card-border: #DECDBB;
+  --input-border: #d1ccc7;
+  --input-focus: #6A88A4;
+  --muted: #9c9590;
+  --muted-fg: #6b6460;
+
+  /* Status colors */
+  --status-active: #16a34a;
+  --status-active-bg: #dcfce7;
+  --status-pending: #d97706;
+  --status-pending-bg: #fef3c7;
+  --status-disabled: #6b7280;
+  --status-disabled-bg: #f3f4f6;
+
+  /* Destructive */
+  --destructive: #dc2626;
+  --destructive-hover: #b91c1c;
+  --destructive-bg: #fef2f2;
+
+  /* Toast */
+  --toast-success: #16a34a;
+  --toast-error: #dc2626;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-snow-white: var(--snow-white);
+  --color-beige-skin: var(--beige-skin);
+  --color-silver-blue: var(--silver-blue);
+  --color-silver-blue-hover: var(--silver-blue-hover);
+  --color-cherry-brown: var(--cherry-brown);
+  --color-cherry-brown-light: var(--cherry-brown-light);
+  --color-card-bg: var(--card-bg);
+  --color-card-border: var(--card-border);
+  --color-input-border: var(--input-border);
+  --color-input-focus: var(--input-focus);
+  --color-muted: var(--muted);
+  --color-muted-fg: var(--muted-fg);
+  --color-destructive: var(--destructive);
+  --color-destructive-hover: var(--destructive-hover);
+  --color-destructive-bg: var(--destructive-bg);
+  --color-status-active: var(--status-active);
+  --color-status-active-bg: var(--status-active-bg);
+  --color-status-pending: var(--status-pending);
+  --color-status-pending-bg: var(--status-pending-bg);
+  --color-status-disabled: var(--status-disabled);
+  --color-status-disabled-bg: var(--status-disabled-bg);
+  --font-heading: 'Poppins', sans-serif;
+  --font-body: 'Raleway', sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+/* ============================================================
+   Base Styles
+   ============================================================ */
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: 'Raleway', sans-serif;
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Poppins', sans-serif;
+  font-weight: 700;
+  color: var(--cherry-brown);
+}
+
+button, .btn {
+  font-family: 'Poppins', sans-serif;
+  font-weight: 600;
+}
+
+/* ============================================================
+   Scrollbar Styling
+   ============================================================ */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--snow-white);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--beige-skin);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--silver-blue);
+}
+
+/* ============================================================
+   Silver/Chrome Gradient (for hover states)
+   ============================================================ */
+.gradient-chrome {
+  background: linear-gradient(135deg, #C0C0C0 0%, #E8E8E8 50%, #C0C0C0 100%);
+}
+
+/* ============================================================
+   Animations
+   ============================================================ */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes toastSlideIn {
+  from { opacity: 0; transform: translateX(100%); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes toastSlideOut {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(100%); }
+}
+
+@keyframes progressPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+.animate-slide-in {
+  animation: slideIn 0.3s ease-out forwards;
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.2s ease-out forwards;
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, transparent 0%, var(--beige-skin) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* ============================================================
+   Focus styles
+   ============================================================ */
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--silver-blue);
+  box-shadow: 0 0 0 3px rgba(106, 136, 164, 0.15);
+}
+
+/* ============================================================
+   Selection
+   ============================================================ */
+::selection {
+  background: var(--silver-blue);
+  color: white;
 }

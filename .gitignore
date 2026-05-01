@@ -39,3 +39,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+.vercel
+test-*.js
+check-tokens.js
+read-doc.js
+parsed_doc.txt
+build_output.log
+*.log
