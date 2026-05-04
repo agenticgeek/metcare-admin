@@ -54,6 +54,9 @@
   "videos.thumbnail.error.format": "Utilisez JPEG, PNG, WebP ou GIF",
   "videos.thumbnail.error.size": "L’image doit faire 5 Mo ou moins",
   "videos.action.delete": "Supprimer",
+  "videos.action.edit": "Modifier",
+  "videos.edit.title": "Modifier le module",
+  "videos.edit.save": "Enregistrer",
   "videos.confirm.delete": "Supprimer ce module ?",
   "videos.confirm.delete.desc": "Le fichier vidéo sera définitivement supprimé.",
   "login.title": "Espace Administrateur",
@@ -67,6 +70,7 @@
   "toast.user.deleted": "Utilisateur supprimé",
   "toast.module.created": "Module enregistré",
   "toast.module.deleted": "Module supprimé",
+  "toast.module.updated": "Module mis à jour",
   "toast.thumbnail.updated": "Vignette mise à jour",
   "toast.error.generic": "Une erreur est survenue"
 }
