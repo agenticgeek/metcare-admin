@@ -146,9 +146,15 @@ export function VideosTab() {
 
         await new Promise<void>((resolve, reject) => {
           const xhr = new XMLHttpRequest();
-          // We talk DIRECTLY to Cloudflare to bypass Vercel's 4.5MB limit.
-          // CORS is now handled via 'allowedOrigins' in the backend initiation.
-          xhr.open('PATCH', tusUploadUrl);
+          const isLocal = window.location.hostname === 'localhost';
+          
+          // On localhost, we use the proxy to avoid all CORS issues.
+          // On Vercel, we go direct to bypass the 4.5MB serverless limit.
+          const uploadTarget = isLocal 
+            ? `/api/admin/tus-proxy?tusUrl=${encodeURIComponent(tusUploadUrl)}`
+            : tusUploadUrl;
+            
+          xhr.open('PATCH', uploadTarget);
           
           xhr.setRequestHeader('Tus-Resumable', '1.0.0');
           xhr.setRequestHeader('Upload-Offset', offset.toString());

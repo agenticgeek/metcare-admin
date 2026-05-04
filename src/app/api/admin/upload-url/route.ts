@@ -14,11 +14,9 @@ export async function POST(request: Request) {
     }
 
     const { uploadLength } = await request.json();
-    
-    // GET THE ACTUAL ORIGIN DYNAMICALLY
-    // This ensures it works for Vercel Preview URLs, Localhost, etc.
     const origin = request.headers.get('origin') || 'http://localhost:3000';
-    // Remove protocol and trailing slash for Cloudflare's allowedOrigins format
+
+    // Cloudflare allowedOrigins can be picky. We'll provide both with and without protocols.
     const cleanOrigin = origin.replace(/^https?:\/\//, '').replace(/\/$/, '');
 
     const cfResponse = await fetch(
@@ -33,11 +31,13 @@ export async function POST(request: Request) {
         },
         body: JSON.stringify({
           allowedOrigins: [
-            cleanOrigin,
-            'localhost:3000',
-            'localhost:3001',
+            origin,         // e.g. "http://localhost:3000"
+            cleanOrigin,    // e.g. "localhost:3000"
+            'localhost',
             'metcare-admin.vercel.app',
-            'met-academy-admin.vercel.app'
+            'met-academy-admin.vercel.app',
+            'https://metcare-admin.vercel.app',
+            'https://met-academy-admin.vercel.app'
           ],
         })
       }
@@ -52,7 +52,7 @@ export async function POST(request: Request) {
     const tusUploadUrl = cfResponse.headers.get('location');
 
     if (!uid || !tusUploadUrl) {
-      return NextResponse.json({ error: 'Cloudflare did not return upload headers' }, { status: 500 });
+      return NextResponse.json({ error: 'No upload URL returned' }, { status: 500 });
     }
 
     return NextResponse.json({ tusUploadUrl, uid });
