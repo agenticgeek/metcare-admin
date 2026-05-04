@@ -90,7 +90,7 @@ function ActivateContent() {
             Votre mot de passe a été enregistré avec succès. Vous pouvez maintenant accéder à votre espace formation.
           </p>
           <button
-            onClick={() => window.location.href = 'https://met-academy.com/login'} // Placeholder for student portal
+            onClick={() => window.location.href = 'https://metcare-frontend.vercel.app/sign-in'} // Placeholder for student portal
             className="w-full py-3 bg-silver-blue text-white rounded-xl font-semibold hover:bg-silver-blue-hover transition-colors shadow-sm"
           >
             Accéder à la formation
