@@ -137,28 +137,31 @@ export function VideosTab() {
       
       const { tusUploadUrl, uid } = await urlRes.json();
 
-      // Step 2: Manual Chunked TUS Upload
-      const CHUNK_SIZE = 5.5 * 1024 * 1024; // 5.5MB (Cloudflare requires >5MB)
+      // Step 2: Manual Chunked TUS Upload via Supabase Buffer
+      const CHUNK_SIZE = 5.5 * 1024 * 1024; // 5.5MB
       let offset = 0;
+      const { supabase } = await import('@/lib/supabase');
 
       while (offset < file.size) {
         const chunk = file.slice(offset, offset + CHUNK_SIZE);
+        const chunkId = `${uid}-${offset}`;
+        const supabasePath = `chunks/${chunkId}`;
 
+        // A. Upload chunk to Supabase Buffer
+        const { error: uploadError } = await supabase.storage
+          .from('temp-video-chunks')
+          .upload(supabasePath, chunk, { upsert: true });
+
+        if (uploadError) throw new Error(`Supabase Buffer Error: ${uploadError.message}`);
+
+        // B. Call Proxy to flush from Supabase to Cloudflare
         await new Promise<void>((resolve, reject) => {
           const xhr = new XMLHttpRequest();
-          const isLocal = window.location.hostname === 'localhost';
+          const proxyUrl = `/api/admin/tus-proxy?tusUrl=${encodeURIComponent(tusUploadUrl)}&supabasePath=${encodeURIComponent(supabasePath)}`;
           
-          // On localhost, we use the proxy to avoid all CORS issues.
-          // On Vercel, we go direct to bypass the 4.5MB serverless limit.
-          const uploadTarget = isLocal 
-            ? `/api/admin/tus-proxy?tusUrl=${encodeURIComponent(tusUploadUrl)}`
-            : tusUploadUrl;
-            
-          xhr.open('PATCH', uploadTarget);
-          
+          xhr.open('PATCH', proxyUrl);
           xhr.setRequestHeader('Tus-Resumable', '1.0.0');
           xhr.setRequestHeader('Upload-Offset', offset.toString());
-          xhr.setRequestHeader('Content-Type', 'application/offset+octet-stream');
           
           xhr.onload = () => {
             if (xhr.status >= 200 && xhr.status < 300) {
@@ -167,12 +170,12 @@ export function VideosTab() {
               setUploadProgress(percent);
               resolve();
             } else {
-              reject(new Error(`Chunk upload failed with status ${xhr.status}`));
+              reject(new Error(`Proxy failed with status ${xhr.status}`));
             }
           };
           
-          xhr.onerror = () => reject(new Error('Network error during chunk upload'));
-          xhr.send(chunk);
+          xhr.onerror = () => reject(new Error('Network error during proxy call'));
+          xhr.send(); // No body sent to Vercel!
         });
       }
       console.log('Manual Chunked TUS Success!');

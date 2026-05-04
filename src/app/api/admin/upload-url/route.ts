@@ -13,6 +13,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Cloudflare credentials missing' }, { status: 500 });
     }
 
+    // Ensure the temporary buffer bucket exists in Supabase
+    const { supabaseAdmin } = await import('@/lib/supabase');
+    await supabaseAdmin.storage.createBucket('temp-video-chunks', {
+      public: false,
+      fileSizeLimit: 10 * 1024 * 1024,
+    }).catch(() => {});
+
     const { uploadLength } = await request.json();
     const origin = request.headers.get('origin') || 'http://localhost:3000';
     const cleanOrigin = origin.replace(/^https?:\/\//, '').replace(/\/$/, '');
