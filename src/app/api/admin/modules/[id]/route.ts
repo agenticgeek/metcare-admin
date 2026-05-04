@@ -2,6 +2,80 @@ import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { getAdminSession } from '@/lib/auth';
 import { getThumbnailBucket, objectPathFromThumbnailPublicUrl } from '@/lib/storage-thumbnails';
+import { thumbnailUrlForAdminDisplay } from '@/lib/thumbnail-admin-url';
+
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await getAdminSession();
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { id } = await params;
+    const body = await request.json();
+    const titleRaw = body.title;
+    const orderRaw = body.order_index;
+
+    if (titleRaw === undefined && orderRaw === undefined) {
+      return NextResponse.json({ error: 'No fields to update' }, { status: 400 });
+    }
+
+    const updates: { title?: string; order_index?: number } = {};
+
+    if (titleRaw !== undefined) {
+      if (typeof titleRaw !== 'string' || !titleRaw.trim()) {
+        return NextResponse.json({ error: 'Title is required' }, { status: 400 });
+      }
+      updates.title = titleRaw.trim();
+    }
+
+    if (orderRaw !== undefined) {
+      if (!Number.isInteger(orderRaw)) {
+        return NextResponse.json({ error: 'Order number must be an integer' }, { status: 400 });
+      }
+
+      const { data: conflict } = await supabaseAdmin
+        .from('modules')
+        .select('id')
+        .eq('order_index', orderRaw)
+        .neq('id', id)
+        .maybeSingle();
+
+      if (conflict) {
+        return NextResponse.json({ error: 'order_duplicate' }, { status: 409 });
+      }
+      updates.order_index = orderRaw;
+    }
+
+    const { data: module, error: updateError } = await supabaseAdmin
+      .from('modules')
+      .update(updates)
+      .eq('id', id)
+      .select(
+        'id, order_index, title, description, video_id, duration_seconds, is_published, created_at, thumbnail_url'
+      )
+      .single();
+
+    if (updateError) {
+      return NextResponse.json({ error: updateError.message }, { status: 500 });
+    }
+
+    if (!module) {
+      return NextResponse.json({ error: 'Module not found' }, { status: 404 });
+    }
+
+    const displayThumb = await thumbnailUrlForAdminDisplay(module.thumbnail_url);
+
+    return NextResponse.json({
+      module: { ...module, thumbnail_url: displayThumb ?? module.thumbnail_url },
+    });
+  } catch {
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
 
 export async function DELETE(
   request: Request,

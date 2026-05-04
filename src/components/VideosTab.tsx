@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Video, UploadCloud, Trash2, Loader2, PlayCircle, CheckCircle, ImageIcon } from 'lucide-react';
-import { AlertDialog } from './Modal';
+import { Video, UploadCloud, Trash2, Loader2, PlayCircle, CheckCircle, ImageIcon, Pencil } from 'lucide-react';
+import { AlertDialog, Modal } from './Modal';
 import { useToast } from './Toast';
 import { formatDuration } from '@/lib/utils';
 
@@ -51,6 +51,12 @@ export function VideosTab() {
   const [thumbnailUploadingId, setThumbnailUploadingId] = useState<string | null>(null);
   const rowThumbnailInputRef = useRef<HTMLInputElement>(null);
   const rowThumbnailModuleIdRef = useRef<string | null>(null);
+
+  const [editModule, setEditModule] = useState<Module | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editOrder, setEditOrder] = useState('');
+  const [editErrors, setEditErrors] = useState<{ title?: string; order?: string }>({});
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const fetchModules = useCallback(async () => {
     try {
@@ -299,6 +305,70 @@ export function VideosTab() {
   const openRowThumbnailPicker = (moduleId: string) => {
     rowThumbnailModuleIdRef.current = moduleId;
     rowThumbnailInputRef.current?.click();
+  };
+
+  const openEditModule = (m: Module) => {
+    setEditModule(m);
+    setEditTitle(m.title);
+    setEditOrder(String(m.order_index));
+    setEditErrors({});
+  };
+
+  const closeEditModule = () => {
+    setEditModule(null);
+    setEditTitle('');
+    setEditOrder('');
+    setEditErrors({});
+    setSavingEdit(false);
+  };
+
+  const handleSaveEditModule = async () => {
+    if (!editModule) return;
+
+    const errors: { title?: string; order?: string } = {};
+    if (!editTitle.trim()) errors.title = t('modal.error.required');
+    const orderTrimmed = editOrder.trim();
+    if (!orderTrimmed || !/^-?\d+$/.test(orderTrimmed)) errors.order = t('modal.error.required');
+
+    if (Object.keys(errors).length > 0) {
+      setEditErrors(errors);
+      return;
+    }
+
+    const orderNum = parseInt(orderTrimmed, 10);
+
+    setSavingEdit(true);
+    setEditErrors({});
+
+    try {
+      const res = await fetch(`/api/admin/modules/${editModule.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: editTitle.trim(),
+          order_index: orderNum,
+        }),
+      });
+
+      if (res.status === 409) {
+        setEditErrors({ order: t('videos.form.order.duplicate') });
+        return;
+      }
+
+      if (!res.ok) throw new Error('update failed');
+
+      const data = await res.json();
+      const updated = data.module as Module;
+      setModules((prev) =>
+        [...prev.filter((m) => m.id !== updated.id), updated].sort((a, b) => a.order_index - b.order_index)
+      );
+      closeEditModule();
+      showToast(t('toast.module.updated'), 'success');
+    } catch {
+      showToast(t('toast.error.generic'), 'error');
+    } finally {
+      setSavingEdit(false);
+    }
   };
 
   const handleDelete = async () => {
@@ -604,15 +674,26 @@ export function VideosTab() {
                       {formatDuration(module.duration_seconds)}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <button
-                        type="button"
-                        onClick={() => setDeleteTarget(module)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-destructive bg-destructive-bg rounded-lg hover:bg-red-100 transition-colors"
-                        style={{ fontFamily: 'Poppins, sans-serif' }}
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        {t('videos.action.delete')}
-                      </button>
+                      <div className="inline-flex flex-wrap items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openEditModule(module)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-silver-blue bg-silver-blue/10 rounded-lg hover:bg-silver-blue/15 transition-colors"
+                          style={{ fontFamily: 'Poppins, sans-serif' }}
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                          {t('videos.action.edit')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDeleteTarget(module)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-destructive bg-destructive-bg rounded-lg hover:bg-red-100 transition-colors"
+                          style={{ fontFamily: 'Poppins, sans-serif' }}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          {t('videos.action.delete')}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -621,6 +702,68 @@ export function VideosTab() {
           </table>
         </div>
       </div>
+
+      <Modal
+        isOpen={!!editModule}
+        onClose={closeEditModule}
+        title={t('videos.edit.title')}
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-cherry-brown mb-1.5" style={{ fontFamily: 'Raleway, sans-serif' }}>
+              {t('videos.form.title')}
+            </label>
+            <input
+              type="text"
+              value={editTitle}
+              onChange={(e) => {
+                setEditTitle(e.target.value);
+                setEditErrors((p) => ({ ...p, title: undefined }));
+              }}
+              className={`w-full px-4 py-2.5 rounded-xl border text-sm transition-colors ${editErrors.title ? 'border-destructive' : 'border-input-border'}`}
+              style={{ fontFamily: 'Raleway, sans-serif' }}
+            />
+            {editErrors.title && <p className="mt-1 text-xs text-destructive">{editErrors.title}</p>}
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-cherry-brown mb-1.5" style={{ fontFamily: 'Raleway, sans-serif' }}>
+              {t('videos.form.order')}
+            </label>
+            <input
+              type="number"
+              value={editOrder}
+              onChange={(e) => {
+                setEditOrder(e.target.value);
+                setEditErrors((p) => ({ ...p, order: undefined }));
+              }}
+              className={`w-full px-4 py-2.5 rounded-xl border text-sm transition-colors ${editErrors.order ? 'border-destructive' : 'border-input-border'}`}
+              style={{ fontFamily: 'Raleway, sans-serif' }}
+            />
+            {editErrors.order && <p className="mt-1 text-xs text-destructive">{editErrors.order}</p>}
+          </div>
+          <div className="flex justify-end gap-3 pt-2">
+            <button
+              type="button"
+              onClick={closeEditModule}
+              disabled={savingEdit}
+              className="px-4 py-2 text-sm font-semibold rounded-lg border border-input-border text-cherry-brown hover:bg-snow-white transition-colors disabled:opacity-50"
+              style={{ fontFamily: 'Poppins, sans-serif' }}
+            >
+              {t('modal.cancel')}
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveEditModule}
+              disabled={savingEdit}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-silver-blue text-white rounded-xl text-sm font-semibold hover:bg-silver-blue-hover transition-colors disabled:opacity-50"
+              style={{ fontFamily: 'Poppins, sans-serif' }}
+            >
+              {savingEdit && <Loader2 className="w-4 h-4 animate-spin" />}
+              {t('videos.edit.save')}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       <AlertDialog
         isOpen={!!deleteTarget}

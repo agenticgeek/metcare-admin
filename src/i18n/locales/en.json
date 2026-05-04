@@ -54,6 +54,9 @@
   "videos.thumbnail.error.format": "Use JPEG, PNG, WebP, or GIF",
   "videos.thumbnail.error.size": "Image must be 5 MB or smaller",
   "videos.action.delete": "Delete",
+  "videos.action.edit": "Edit",
+  "videos.edit.title": "Edit module",
+  "videos.edit.save": "Save changes",
   "videos.confirm.delete": "Delete this module?",
   "videos.confirm.delete.desc": "The video file will be permanently deleted.",
   "login.title": "Admin Portal",
@@ -67,6 +70,7 @@
   "toast.user.deleted": "User deleted",
   "toast.module.created": "Module saved",
   "toast.module.deleted": "Module deleted",
+  "toast.module.updated": "Module updated",
   "toast.thumbnail.updated": "Thumbnail updated",
   "toast.error.generic": "An error occurred"
 }
