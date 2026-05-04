@@ -140,21 +140,27 @@ export function VideosTab() {
       // Step 2: Manual Chunked TUS Upload via Supabase Buffer
       const CHUNK_SIZE = 5.5 * 1024 * 1024; // 5.5MB
       let offset = 0;
-      const { supabase } = await import('@/lib/supabase');
 
       while (offset < file.size) {
         const chunk = file.slice(offset, offset + CHUNK_SIZE);
         const chunkId = `${uid}-${offset}`;
         const supabasePath = `chunks/${chunkId}`;
 
-        // A. Upload chunk to Supabase Buffer
-        const { error: uploadError } = await supabase.storage
-          .from('temp-video-chunks')
-          .upload(supabasePath, chunk, { upsert: true });
+        // A. Get a Signed Upload URL from our backend
+        const tokenRes = await fetch(`/api/admin/supabase-token?path=${encodeURIComponent(supabasePath)}`);
+        const { signedUrl } = await tokenRes.json();
+        
+        if (!signedUrl) throw new Error('Failed to get signed upload URL');
 
-        if (uploadError) throw new Error(`Supabase Buffer Error: ${uploadError.message}`);
+        // B. Upload chunk to Supabase Buffer via Signed URL
+        const uploadRes = await fetch(signedUrl, {
+          method: 'PUT',
+          body: chunk,
+        });
 
-        // B. Call Proxy to flush from Supabase to Cloudflare
+        if (!uploadRes.ok) throw new Error('Supabase Buffer Upload Failed');
+
+        // C. Call Proxy to flush from Supabase to Cloudflare
         await new Promise<void>((resolve, reject) => {
           const xhr = new XMLHttpRequest();
           const proxyUrl = `/api/admin/tus-proxy?tusUrl=${encodeURIComponent(tusUploadUrl)}&supabasePath=${encodeURIComponent(supabasePath)}`;
