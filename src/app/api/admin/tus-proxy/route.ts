@@ -20,30 +20,32 @@ export async function PATCH(request: Request) {
     const CF_ACCOUNT_ID = process.env.CF_ACCOUNT_ID;
     const CF_STREAM_API_TOKEN = process.env.CF_STREAM_API_TOKEN;
 
+    if (!CF_ACCOUNT_ID) {
+      return NextResponse.json({ error: 'Proxy Error: Missing CF_ACCOUNT_ID env' }, { status: 500 });
+    }
+
     const uploadURL = `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/media/${uid}?tusv2=true`;
 
-    // PIPELINE THE BODY DIRECTLY
-    // This avoids memory issues and is more reliable for binary data
+    // Forward the PATCH to Cloudflare
     const cfResponse = await fetch(uploadURL, {
       method: 'PATCH',
       headers: {
-        'Authorization': `Bearer ${CF_STREAM_API_TOKEN}`,
+        // REMOVED Authorization header - the tokenized URL should handle itself
         'Tus-Resumable': '1.0.0',
         'Upload-Offset': offset || '0',
         'Content-Type': 'application/offset+octet-stream',
       },
       body: request.body,
-      // @ts-ignore - required for streaming in some environments
+      // @ts-ignore
       duplex: 'half',
     });
 
     if (!cfResponse.ok) {
       const errorText = await cfResponse.text();
       console.error('[TUS-PROXY] Cloudflare Error:', cfResponse.status, errorText);
-      // Return the ACTUAL error from Cloudflare to the browser
       return NextResponse.json({ 
         error: `Cloudflare ${cfResponse.status}`, 
-        details: errorText 
+        details: errorText // This will tell us EXACTLY why Cloudflare is rejecting it
       }, { status: cfResponse.status });
     }
 
@@ -54,14 +56,13 @@ export async function PATCH(request: Request) {
   }
 }
 
-// OPTIONS handler for CORS preflight
 export async function OPTIONS() {
   return new NextResponse(null, {
     status: 204,
     headers: {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'PATCH, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Upload-Offset, Tus-Resumable, x-upload-url',
+      'Access-Control-Allow-Headers': 'Content-Type, Upload-Offset, Tus-Resumable',
     },
   });
 }
