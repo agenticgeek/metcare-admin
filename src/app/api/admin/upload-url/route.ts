@@ -1,54 +1,56 @@
 import { NextResponse } from 'next/server';
 import { getAdminSession } from '@/lib/auth';
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
     const session = await getAdminSession();
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const CF_ACCOUNT_ID = process.env.CF_ACCOUNT_ID;
     const CF_STREAM_API_TOKEN = process.env.CF_STREAM_API_TOKEN;
 
     if (!CF_ACCOUNT_ID || !CF_STREAM_API_TOKEN) {
-      return NextResponse.json(
-        { error: 'Cloudflare Stream not configured' },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: 'Cloudflare credentials missing' }, { status: 500 });
     }
 
-    // Call Cloudflare Stream Direct Upload API
+    const { uploadLength } = await request.json();
+
+    // Standard Direct Creator Upload request
     const cfResponse = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/stream/direct_upload`,
+      `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/stream?direct_user_upload=true`,
       {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${CF_STREAM_API_TOKEN}`,
-          'Content-Type': 'application/json',
+          'Tus-Resumable': '1.0.0',
+          'Upload-Length': uploadLength.toString(),
         },
         body: JSON.stringify({
-          maxDurationSeconds: 7200, // 2 hour cap
-        }),
+          // Allowed origins for CORS (kept for redundancy)
+          allowedOrigins: [
+            'http://localhost:3000',
+            'https://met-academy-admin.vercel.app',
+          ],
+          meta: { name: 'Admin Video' }
+        })
       }
     );
 
-    const cfData = await cfResponse.json();
-
-    if (!cfData.success) {
-      console.error('Cloudflare Direct Upload error:', cfData.errors);
-      return NextResponse.json(
-        { error: 'Failed to generate upload URL' },
-        { status: 500 }
-      );
+    if (!cfResponse.ok) {
+      const errorText = await cfResponse.text();
+      return NextResponse.json({ error: `CF Error: ${cfResponse.status}`, details: errorText }, { status: cfResponse.status });
     }
 
-    // Return uploadURL and uid — NEVER return API token or account ID
-    return NextResponse.json({
-      uploadURL: cfData.result.uploadURL,
-      uid: cfData.result.uid,
-    });
-  } catch {
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // GET THE UID
+    const uid = cfResponse.headers.get('stream-media-id');
+    
+    if (!uid) return NextResponse.json({ error: 'No media ID returned' }, { status: 500 });
+
+    // CONSTRUCT DIRECT URL: This bypasses the edge-production.gateway which was failing with 520
+    const uploadURL = `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/media/${uid}?tusv2=true`;
+
+    return NextResponse.json({ uploadURL, uid });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

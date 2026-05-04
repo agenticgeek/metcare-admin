@@ -6,6 +6,7 @@ import { Video, UploadCloud, Trash2, Loader2, PlayCircle, CheckCircle, ImageIcon
 import { AlertDialog, Modal } from './Modal';
 import { useToast } from './Toast';
 import { formatDuration } from '@/lib/utils';
+import * as tus from 'tus-js-client';
 
 const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 const THUMBNAIL_MAX_BYTES = 5 * 1024 * 1024;
@@ -122,32 +123,55 @@ export function VideosTab() {
     setIsUploading(true);
 
     try {
-      // Step 1: Get upload URL
-      const urlRes = await fetch('/api/admin/upload-url', { method: 'POST' });
-      if (!urlRes.ok) throw new Error('Failed to get upload URL');
+      // Step 1: Get upload URL and unique ID from our API
+      const urlRes = await fetch('/api/admin/upload-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uploadLength: file.size }),
+      });
+      
+      if (!urlRes.ok) {
+        const errorData = await urlRes.json();
+        console.error('UPLOAD URL ERROR:', errorData);
+        throw new Error(errorData.error || 'Failed to get upload URL');
+      }
+      
       const { uploadURL, uid } = await urlRes.json();
 
-      // Step 2: Direct Upload via XMLHttpRequest (to track progress)
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.upload.addEventListener('progress', (e) => {
-          if (e.lengthComputable) {
-            setUploadProgress(Math.round((e.loaded * 100) / e.total));
-          }
+      // Step 2: Manual Chunked TUS Upload (Bypasses library HEAD checks)
+      const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks
+      let offset = 0;
+
+      while (offset < file.size) {
+        const chunk = file.slice(offset, offset + CHUNK_SIZE);
+        
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          // We call our own proxy instead of Cloudflare directly
+          xhr.open('PATCH', '/api/admin/tus-proxy');
+          
+          xhr.setRequestHeader('Tus-Resumable', '1.0.0');
+          xhr.setRequestHeader('Upload-Offset', offset.toString());
+          xhr.setRequestHeader('Content-Type', 'application/offset+octet-stream');
+          // We pass the Cloudflare URL in a custom header
+          xhr.setRequestHeader('x-upload-url', uploadURL);
+          
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              offset += chunk.size;
+              const percent = Math.round((offset / file.size) * 100);
+              setUploadProgress(percent);
+              resolve();
+            } else {
+              reject(new Error(`Chunk upload failed with status ${xhr.status}`));
+            }
+          };
+          
+          xhr.onerror = () => reject(new Error('Network error during chunk upload'));
+          xhr.send(chunk);
         });
-        xhr.addEventListener('load', () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            resolve();
-          } else {
-            reject(new Error('Upload failed'));
-          }
-        });
-        xhr.addEventListener('error', () => reject(new Error('Upload failed')));
-        xhr.open('POST', uploadURL);
-        const formData = new FormData();
-        formData.append('file', file);
-        xhr.send(formData);
-      });
+      }
+      console.log('Manual Chunked TUS Success!');
 
       setUploadedVideoId(uid);
       showToast(t('videos.upload.success'), 'success');
@@ -155,7 +179,7 @@ export function VideosTab() {
       // Step 3: Fetch duration (polling since Cloudflare needs time to process)
       let durationFetched = false;
       let attempts = 0;
-      const maxAttempts = 10;
+      const maxAttempts = 40; // Wait up to 2 minutes (40 * 3s)
 
       const pollDuration = async () => {
         if (durationFetched || attempts >= maxAttempts) return;
@@ -593,19 +617,19 @@ export function VideosTab() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-beige-skin bg-snow-white/50">
-                <th className="px-6 py-4 text-left text-xs font-semibold text-muted-fg uppercase tracking-wider w-16" style={{ fontFamily: 'Poppins, sans-serif' }}>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-muted-fg uppercase tracking-wider w-16 min-w-[80px]" style={{ fontFamily: 'Poppins, sans-serif' }}>
                   {t('videos.col.order')}
                 </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-muted-fg uppercase tracking-wider w-28" style={{ fontFamily: 'Poppins, sans-serif' }}>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-muted-fg uppercase tracking-wider w-28 min-w-[140px]" style={{ fontFamily: 'Poppins, sans-serif' }}>
                   {t('videos.col.thumbnail')}
                 </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-muted-fg uppercase tracking-wider" style={{ fontFamily: 'Poppins, sans-serif' }}>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-muted-fg uppercase tracking-wider min-w-[250px]" style={{ fontFamily: 'Poppins, sans-serif' }}>
                   {t('videos.col.title')}
                 </th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-muted-fg uppercase tracking-wider" style={{ fontFamily: 'Poppins, sans-serif' }}>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-muted-fg uppercase tracking-wider w-24 min-w-[120px]" style={{ fontFamily: 'Poppins, sans-serif' }}>
                   {t('videos.col.duration')}
                 </th>
-                <th className="px-6 py-4 text-right text-xs font-semibold text-muted-fg uppercase tracking-wider" style={{ fontFamily: 'Poppins, sans-serif' }}>
+                <th className="px-6 py-4 text-right text-xs font-semibold text-muted-fg uppercase tracking-wider w-40 min-w-[180px]" style={{ fontFamily: 'Poppins, sans-serif' }}>
                   {t('videos.col.actions')}
                 </th>
               </tr>
@@ -634,13 +658,13 @@ export function VideosTab() {
                       {module.order_index}
                     </td>
                     <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-3">
                         {module.thumbnail_url ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
                             src={module.thumbnail_url}
                             alt=""
-                            className="h-12 w-20 object-cover rounded-md border border-input-border bg-snow-white"
+                            className="h-12 w-20 object-cover rounded-md border border-input-border bg-snow-white shadow-sm"
                           />
                         ) : (
                           <div className="h-12 w-20 rounded-md border border-dashed border-input-border bg-snow-white flex items-center justify-center">
@@ -651,11 +675,11 @@ export function VideosTab() {
                           type="button"
                           disabled={thumbnailUploadingId === module.id}
                           onClick={() => openRowThumbnailPicker(module.id)}
-                          className="text-xs font-semibold text-silver-blue hover:underline disabled:opacity-50"
+                          className="px-2 py-1 text-[10px] font-bold uppercase tracking-tight text-silver-blue bg-silver-blue/5 rounded hover:bg-silver-blue/10 transition-colors disabled:opacity-50 whitespace-nowrap"
                           style={{ fontFamily: 'Poppins, sans-serif' }}
                         >
                           {thumbnailUploadingId === module.id ? (
-                            <Loader2 className="w-4 h-4 animate-spin inline" />
+                            <Loader2 className="w-3 h-3 animate-spin inline" />
                           ) : module.thumbnail_url ? (
                             t('videos.thumbnail.replace')
                           ) : (
@@ -674,7 +698,7 @@ export function VideosTab() {
                       {formatDuration(module.duration_seconds)}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <div className="inline-flex flex-wrap items-center justify-end gap-2">
+                      <div className="flex items-center justify-end gap-2 whitespace-nowrap">
                         <button
                           type="button"
                           onClick={() => openEditModule(module)}
