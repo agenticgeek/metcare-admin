@@ -6,7 +6,6 @@ import { Video, UploadCloud, Trash2, Loader2, PlayCircle, CheckCircle, ImageIcon
 import { AlertDialog, Modal } from './Modal';
 import { useToast } from './Toast';
 import { formatDuration } from '@/lib/utils';
-import * as tus from 'tus-js-client';
 
 const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 const THUMBNAIL_MAX_BYTES = 5 * 1024 * 1024;
@@ -136,7 +135,7 @@ export function VideosTab() {
         throw new Error(errorData.error || 'Failed to get upload URL');
       }
       
-      const { uploadURL, uid } = await urlRes.json();
+      const { tusUploadUrl, uid } = await urlRes.json();
 
       // Step 2: Manual Chunked TUS Upload (Bypasses library HEAD checks)
       const CHUNK_SIZE = 4 * 1024 * 1024; // 4MB chunks (Safe for Vercel 4.5MB limit)
@@ -144,11 +143,10 @@ export function VideosTab() {
 
       while (offset < file.size) {
         const chunk = file.slice(offset, offset + CHUNK_SIZE);
-        
+
         await new Promise<void>((resolve, reject) => {
           const xhr = new XMLHttpRequest();
-          // We pass only the UID for maximum reliability
-          const proxyUrl = `/api/admin/tus-proxy?uid=${uid}`;
+          const proxyUrl = `/api/admin/tus-proxy?tusUrl=${encodeURIComponent(tusUploadUrl)}`;
           xhr.open('PATCH', proxyUrl);
           
           xhr.setRequestHeader('Tus-Resumable', '1.0.0');
