@@ -37,7 +37,10 @@ export async function POST(request: Request) {
             'metcare-admin.vercel.app',
             'met-academy-admin.vercel.app',
             'https://metcare-admin.vercel.app',
-            'https://met-academy-admin.vercel.app'
+            'https://met-academy-admin.vercel.app',
+            'metcare-admin-git-uzair-agentumais-projects.vercel.app',
+            'https://metcare-admin-git-uzair-agentumais-projects.vercel.app'
+
           ],
         })
       }
