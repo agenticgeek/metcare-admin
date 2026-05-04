@@ -9,18 +9,21 @@ export async function PATCH(request: Request) {
     const session = await getAdminSession();
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    // Read URL from Query Params instead of headers (more stable on Vercel)
     const { searchParams } = new URL(request.url);
-    const uploadURL = searchParams.get('url');
+    const uid = searchParams.get('uid'); // Get the unique media ID
     const offset = request.headers.get('upload-offset');
     
-    if (!uploadURL) {
-      console.error('[TUS-PROXY] Error: Missing url query parameter');
-      return NextResponse.json({ error: 'Missing upload URL' }, { status: 400 });
+    if (!uid) {
+      return NextResponse.json({ error: 'Missing video UID' }, { status: 400 });
     }
 
-    const body = await request.arrayBuffer();
+    const CF_ACCOUNT_ID = process.env.CF_ACCOUNT_ID;
     const CF_STREAM_API_TOKEN = process.env.CF_STREAM_API_TOKEN;
+
+    // REBUILD THE URL SECURELY ON THE SERVER
+    const uploadURL = `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/media/${uid}?tusv2=true`;
+
+    const body = await request.arrayBuffer();
 
     let attempts = 0;
     let cfResponse;

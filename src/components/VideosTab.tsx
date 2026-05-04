@@ -147,8 +147,8 @@ export function VideosTab() {
         
         await new Promise<void>((resolve, reject) => {
           const xhr = new XMLHttpRequest();
-          // We pass the Cloudflare URL in a query parameter for stability on Vercel
-          const proxyUrl = `/api/admin/tus-proxy?url=${encodeURIComponent(uploadURL)}`;
+          // We pass only the UID for maximum reliability
+          const proxyUrl = `/api/admin/tus-proxy?uid=${uid}`;
           xhr.open('PATCH', proxyUrl);
           
           xhr.setRequestHeader('Tus-Resumable', '1.0.0');
