@@ -15,24 +15,17 @@ export async function POST(request: Request) {
 
     const { uploadLength } = await request.json();
 
-    // Standard Direct Creator Upload request
+    // TUS initiation — no body; metadata goes in Upload-Metadata header
     const cfResponse = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/stream?direct_user_upload=true`,
+      `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/stream`,
       {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${CF_STREAM_API_TOKEN}`,
           'Tus-Resumable': '1.0.0',
           'Upload-Length': uploadLength.toString(),
+          'Upload-Metadata': 'name QWRtaW4gVmlkZW8=', // base64("Admin Video")
         },
-        body: JSON.stringify({
-          // Allowed origins for CORS (kept for redundancy)
-          allowedOrigins: [
-            'http://localhost:3000',
-            'https://met-academy-admin.vercel.app',
-          ],
-          meta: { name: 'Admin Video' }
-        })
       }
     );
 
@@ -41,15 +34,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: `CF Error: ${cfResponse.status}`, details: errorText }, { status: cfResponse.status });
     }
 
-    // GET THE UID
     const uid = cfResponse.headers.get('stream-media-id');
-    
-    if (!uid) return NextResponse.json({ error: 'No media ID returned' }, { status: 500 });
+    const tusUploadUrl = cfResponse.headers.get('location');
 
-    // CONSTRUCT DIRECT URL: This bypasses the edge-production.gateway which was failing with 520
-    const uploadURL = `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/media/${uid}?tusv2=true`;
+    console.log('[upload-url] CF headers:', {
+      uid,
+      tusUploadUrl,
+      allHeaders: Object.fromEntries(cfResponse.headers.entries()),
+    });
 
-    return NextResponse.json({ uploadURL, uid });
+    if (!uid) return NextResponse.json({ error: 'No stream-media-id returned from Cloudflare' }, { status: 500 });
+    if (!tusUploadUrl) return NextResponse.json({ error: 'No location header returned from Cloudflare' }, { status: 500 });
+
+    return NextResponse.json({ tusUploadUrl, uid });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

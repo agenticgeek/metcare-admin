@@ -10,21 +10,24 @@ export async function PATCH(request: Request) {
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const { searchParams } = new URL(request.url);
+    // Support both 'tusUrl' (from user's manual change) and 'uid' (from my previous fix)
+    const tusUrl = searchParams.get('tusUrl') || searchParams.get('url');
     const uid = searchParams.get('uid');
     const offset = request.headers.get('upload-offset');
     
-    if (!uid) {
-      return NextResponse.json({ error: 'Proxy Error: Missing video UID' }, { status: 400 });
-    }
-
-    const CF_ACCOUNT_ID = process.env.CF_ACCOUNT_ID;
     const CF_STREAM_API_TOKEN = process.env.CF_STREAM_API_TOKEN;
+    const CF_ACCOUNT_ID = process.env.CF_ACCOUNT_ID;
 
-    if (!CF_ACCOUNT_ID || !CF_STREAM_API_TOKEN) {
-      return NextResponse.json({ error: 'Proxy Error: Missing Cloudflare env vars' }, { status: 500 });
+    let uploadURL = '';
+    if (tusUrl) {
+      uploadURL = tusUrl;
+    } else if (uid && CF_ACCOUNT_ID) {
+      uploadURL = `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/media/${uid}?tusv2=true`;
     }
 
-    const uploadURL = `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/media/${uid}?tusv2=true`;
+    if (!uploadURL) {
+      return NextResponse.json({ error: 'Proxy Error: Missing upload target (uid or tusUrl)' }, { status: 400 });
+    }
 
     // Forward the PATCH to Cloudflare
     const cfResponse = await fetch(uploadURL, {
@@ -45,7 +48,7 @@ export async function PATCH(request: Request) {
       console.error('[TUS-PROXY] Cloudflare Error:', cfResponse.status, errorText);
       return NextResponse.json({ 
         error: `Cloudflare ${cfResponse.status}`, 
-        details: errorText // This will tell us EXACTLY why Cloudflare is rejecting it
+        details: errorText 
       }, { status: cfResponse.status });
     }
 

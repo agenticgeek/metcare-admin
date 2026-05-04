@@ -137,8 +137,8 @@ export function VideosTab() {
       
       const { tusUploadUrl, uid } = await urlRes.json();
 
-      // Step 2: Manual Chunked TUS Upload (Bypasses library HEAD checks)
-      const CHUNK_SIZE = 4 * 1024 * 1024; // 4MB chunks (Safe for Vercel 4.5MB limit)
+      // Step 2: Manual Chunked TUS Upload
+      const CHUNK_SIZE = 5.5 * 1024 * 1024; // 5.5MB (Cloudflare requires >5MB)
       let offset = 0;
 
       while (offset < file.size) {
