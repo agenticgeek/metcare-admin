@@ -9,15 +9,19 @@ export async function PATCH(request: Request) {
     const session = await getAdminSession();
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const uploadURL = request.headers.get('x-upload-url');
+    // Read URL from Query Params instead of headers (more stable on Vercel)
+    const { searchParams } = new URL(request.url);
+    const uploadURL = searchParams.get('url');
     const offset = request.headers.get('upload-offset');
     
-    if (!uploadURL) return NextResponse.json({ error: 'Missing upload URL' }, { status: 400 });
+    if (!uploadURL) {
+      console.error('[TUS-PROXY] Error: Missing url query parameter');
+      return NextResponse.json({ error: 'Missing upload URL' }, { status: 400 });
+    }
 
     const body = await request.arrayBuffer();
     const CF_STREAM_API_TOKEN = process.env.CF_STREAM_API_TOKEN;
 
-    // Retry logic for 520 errors
     let attempts = 0;
     let cfResponse;
     
@@ -26,7 +30,7 @@ export async function PATCH(request: Request) {
       cfResponse = await fetch(uploadURL, {
         method: 'PATCH',
         headers: {
-          'Authorization': `Bearer ${CF_STREAM_API_TOKEN}`, // Some gateways require this even for tokenized URLs
+          'Authorization': `Bearer ${CF_STREAM_API_TOKEN}`,
           'Tus-Resumable': '1.0.0',
           'Upload-Offset': offset || '0',
           'Content-Type': 'application/offset+octet-stream',
@@ -35,7 +39,6 @@ export async function PATCH(request: Request) {
       });
 
       if (cfResponse.status !== 520) break;
-      console.warn(`[TUS-PROXY] Received 520, retrying attempt ${attempts}...`);
       await new Promise(r => setTimeout(r, 1000));
     }
 

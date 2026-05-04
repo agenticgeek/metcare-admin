@@ -147,14 +147,13 @@ export function VideosTab() {
         
         await new Promise<void>((resolve, reject) => {
           const xhr = new XMLHttpRequest();
-          // We call our own proxy instead of Cloudflare directly
-          xhr.open('PATCH', '/api/admin/tus-proxy');
+          // We pass the Cloudflare URL in a query parameter for stability on Vercel
+          const proxyUrl = `/api/admin/tus-proxy?url=${encodeURIComponent(uploadURL)}`;
+          xhr.open('PATCH', proxyUrl);
           
           xhr.setRequestHeader('Tus-Resumable', '1.0.0');
           xhr.setRequestHeader('Upload-Offset', offset.toString());
           xhr.setRequestHeader('Content-Type', 'application/offset+octet-stream');
-          // We pass the Cloudflare URL in a custom header
-          xhr.setRequestHeader('x-upload-url', uploadURL);
           
           xhr.onload = () => {
             if (xhr.status >= 200 && xhr.status < 300) {
