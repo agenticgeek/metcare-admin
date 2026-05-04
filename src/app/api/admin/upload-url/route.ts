@@ -14,8 +14,13 @@ export async function POST(request: Request) {
     }
 
     const { uploadLength } = await request.json();
+    
+    // GET THE ACTUAL ORIGIN DYNAMICALLY
+    // This ensures it works for Vercel Preview URLs, Localhost, etc.
+    const origin = request.headers.get('origin') || 'http://localhost:3000';
+    // Remove protocol and trailing slash for Cloudflare's allowedOrigins format
+    const cleanOrigin = origin.replace(/^https?:\/\//, '').replace(/\/$/, '');
 
-    // CRITICAL: We must provide allowedOrigins to fix CORS for direct browser uploads
     const cfResponse = await fetch(
       `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/stream`,
       {
@@ -24,14 +29,13 @@ export async function POST(request: Request) {
           'Authorization': `Bearer ${CF_STREAM_API_TOKEN}`,
           'Tus-Resumable': '1.0.0',
           'Upload-Length': uploadLength.toString(),
-          'Upload-Metadata': 'name QWRtaW4gVmlkZW8=', // base64("Admin Video")
+          'Upload-Metadata': 'name QWRtaW4gVmlkZW8=',
         },
         body: JSON.stringify({
-          // This tells Cloudflare to allow these sites to upload directly
           allowedOrigins: [
+            cleanOrigin,
             'localhost:3000',
             'localhost:3001',
-            'https://metcare-admin-git-uzair-agentumais-projects.vercel.app',
             'metcare-admin.vercel.app',
             'met-academy-admin.vercel.app'
           ],
