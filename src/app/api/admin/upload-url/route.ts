@@ -15,7 +15,7 @@ export async function POST(request: Request) {
 
     const { uploadLength } = await request.json();
 
-    // TUS initiation — no body; metadata goes in Upload-Metadata header
+    // CRITICAL: We must provide allowedOrigins to fix CORS for direct browser uploads
     const cfResponse = await fetch(
       `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/stream`,
       {
@@ -26,6 +26,16 @@ export async function POST(request: Request) {
           'Upload-Length': uploadLength.toString(),
           'Upload-Metadata': 'name QWRtaW4gVmlkZW8=', // base64("Admin Video")
         },
+        body: JSON.stringify({
+          // This tells Cloudflare to allow these sites to upload directly
+          allowedOrigins: [
+            'localhost:3000',
+            'localhost:3001',
+            'https://metcare-admin-git-uzair-agentumais-projects.vercel.app',
+            'metcare-admin.vercel.app',
+            'met-academy-admin.vercel.app'
+          ],
+        })
       }
     );
 
@@ -37,14 +47,9 @@ export async function POST(request: Request) {
     const uid = cfResponse.headers.get('stream-media-id');
     const tusUploadUrl = cfResponse.headers.get('location');
 
-    console.log('[upload-url] CF headers:', {
-      uid,
-      tusUploadUrl,
-      allHeaders: Object.fromEntries(cfResponse.headers.entries()),
-    });
-
-    if (!uid) return NextResponse.json({ error: 'No stream-media-id returned from Cloudflare' }, { status: 500 });
-    if (!tusUploadUrl) return NextResponse.json({ error: 'No location header returned from Cloudflare' }, { status: 500 });
+    if (!uid || !tusUploadUrl) {
+      return NextResponse.json({ error: 'Cloudflare did not return upload headers' }, { status: 500 });
+    }
 
     return NextResponse.json({ tusUploadUrl, uid });
   } catch (err: any) {

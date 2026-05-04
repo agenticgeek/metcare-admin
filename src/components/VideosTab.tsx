@@ -146,8 +146,9 @@ export function VideosTab() {
 
         await new Promise<void>((resolve, reject) => {
           const xhr = new XMLHttpRequest();
-          const proxyUrl = `/api/admin/tus-proxy?tusUrl=${encodeURIComponent(tusUploadUrl)}`;
-          xhr.open('PATCH', proxyUrl);
+          // We talk DIRECTLY to Cloudflare to bypass Vercel's 4.5MB limit.
+          // CORS is now handled via 'allowedOrigins' in the backend initiation.
+          xhr.open('PATCH', tusUploadUrl);
           
           xhr.setRequestHeader('Tus-Resumable', '1.0.0');
           xhr.setRequestHeader('Upload-Offset', offset.toString());
