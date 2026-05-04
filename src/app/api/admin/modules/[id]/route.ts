@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { getAdminSession } from '@/lib/auth';
+import { getThumbnailBucket, objectPathFromThumbnailPublicUrl } from '@/lib/storage-thumbnails';
 
 export async function DELETE(
   request: Request,
@@ -17,7 +18,7 @@ export async function DELETE(
     // Fetch module row to get video_id
     const { data: module, error: fetchError } = await supabaseAdmin
       .from('modules')
-      .select('id, video_id')
+      .select('id, video_id, thumbnail_url')
       .eq('id', id)
       .single();
 
@@ -58,6 +59,16 @@ export async function DELETE(
             { status: 500 }
           );
         }
+      }
+    }
+
+    const thumbPath = objectPathFromThumbnailPublicUrl(module.thumbnail_url);
+    if (thumbPath) {
+      const { error: thumbErr } = await supabaseAdmin.storage
+        .from(getThumbnailBucket())
+        .remove([thumbPath]);
+      if (thumbErr) {
+        console.error('Thumbnail storage delete failed:', module.thumbnail_url, thumbErr);
       }
     }
 

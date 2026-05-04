@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { getAdminSession } from '@/lib/auth';
+import { thumbnailUrlForAdminDisplay } from '@/lib/thumbnail-admin-url';
 
 export async function GET() {
   try {
@@ -11,14 +12,24 @@ export async function GET() {
 
     const { data: modules, error } = await supabaseAdmin
       .from('modules')
-      .select('id, order_index, title, description, video_id, duration_seconds, is_published, created_at')
+      .select(
+        'id, order_index, title, description, video_id, duration_seconds, is_published, created_at, thumbnail_url'
+      )
       .order('order_index', { ascending: true });
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ modules });
+    const list = modules ?? [];
+    const enriched = await Promise.all(
+      list.map(async (m) => ({
+        ...m,
+        thumbnail_url: await thumbnailUrlForAdminDisplay(m.thumbnail_url),
+      }))
+    );
+
+    return NextResponse.json({ modules: enriched });
   } catch {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }

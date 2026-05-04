@@ -2,10 +2,13 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Video, UploadCloud, Trash2, Loader2, PlayCircle } from 'lucide-react';
+import { Video, UploadCloud, Trash2, Loader2, PlayCircle, CheckCircle, ImageIcon } from 'lucide-react';
 import { AlertDialog } from './Modal';
 import { useToast } from './Toast';
 import { formatDuration } from '@/lib/utils';
+
+const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+const THUMBNAIL_MAX_BYTES = 5 * 1024 * 1024;
 
 interface Module {
   id: string;
@@ -13,6 +16,7 @@ interface Module {
   title: string;
   duration_seconds: number | null;
   video_id: string;
+  thumbnail_url?: string | null;
 }
 
 export function VideosTab() {
@@ -20,7 +24,7 @@ export function VideosTab() {
   const { showToast } = useToast();
   const [modules, setModules] = useState<Module[]>([]);
   const [loading, setLoading] = useState(true);
-  
+
   // Upload State
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -36,10 +40,17 @@ export function VideosTab() {
   const [formOrder, setFormOrder] = useState<string>('');
   const [formErrors, setFormErrors] = useState<{ title?: string; order?: string }>({});
   const [savingModule, setSavingModule] = useState(false);
+  const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
+  const [thumbnailPreview, setThumbnailPreview] = useState<string | null>(null);
+  const thumbnailInputRef = useRef<HTMLInputElement>(null);
 
   // Delete State
   const [deleteTarget, setDeleteTarget] = useState<Module | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  const [thumbnailUploadingId, setThumbnailUploadingId] = useState<string | null>(null);
+  const rowThumbnailInputRef = useRef<HTMLInputElement>(null);
+  const rowThumbnailModuleIdRef = useRef<string | null>(null);
 
   const fetchModules = useCallback(async () => {
     try {
@@ -58,6 +69,33 @@ export function VideosTab() {
   useEffect(() => {
     fetchModules();
   }, [fetchModules]);
+
+  useEffect(() => {
+    return () => {
+      if (thumbnailPreview?.startsWith('blob:')) URL.revokeObjectURL(thumbnailPreview);
+    };
+  }, [thumbnailPreview]);
+
+  const resetFormThumbnail = () => {
+    if (thumbnailPreview?.startsWith('blob:')) URL.revokeObjectURL(thumbnailPreview);
+    setThumbnailFile(null);
+    setThumbnailPreview(null);
+  };
+
+  const handleThumbnailSelected = (file: File | undefined) => {
+    if (!file) return;
+    if (!IMAGE_TYPES.includes(file.type)) {
+      showToast(t('videos.thumbnail.error.format'), 'error');
+      return;
+    }
+    if (file.size > THUMBNAIL_MAX_BYTES) {
+      showToast(t('videos.thumbnail.error.size'), 'error');
+      return;
+    }
+    setThumbnailFile(file);
+    if (thumbnailPreview?.startsWith('blob:')) URL.revokeObjectURL(thumbnailPreview);
+    setThumbnailPreview(URL.createObjectURL(file));
+  };
 
   const handleFileUpload = async (file: File) => {
     setUploadError(null);
@@ -107,12 +145,12 @@ export function VideosTab() {
 
       setUploadedVideoId(uid);
       showToast(t('videos.upload.success'), 'success');
-      
+
       // Step 3: Fetch duration (polling since Cloudflare needs time to process)
       let durationFetched = false;
       let attempts = 0;
       const maxAttempts = 10;
-      
+
       const pollDuration = async () => {
         if (durationFetched || attempts >= maxAttempts) return;
         attempts++;
@@ -136,10 +174,10 @@ export function VideosTab() {
       pollDuration();
 
       // Step 4: Show form
-      setFormTitle(file.name.replace(/\.[^/.]+$/, "")); // default title
+      setFormTitle(file.name.replace(/\.[^/.]+$/, '')); // default title
       setFormOrder((modules.length > 0 ? Math.max(...modules.map(m => m.order_index)) + 1 : 1).toString());
+      resetFormThumbnail();
       setShowForm(true);
-
     } catch (err) {
       console.error(err);
       setUploadError(t('videos.upload.error.failed'));
@@ -199,15 +237,68 @@ export function VideosTab() {
       if (!res.ok) throw new Error('Failed to save module');
 
       const data = await res.json();
-      setModules((prev) => [...prev, data.module].sort((a, b) => a.order_index - b.order_index));
+      let saved = data.module as Module;
+
+      if (thumbnailFile && saved?.id) {
+        const fd = new FormData();
+        fd.append('file', thumbnailFile);
+        const tr = await fetch(`/api/admin/modules/${saved.id}/thumbnail`, { method: 'POST', body: fd });
+        if (!tr.ok) {
+          showToast(t('toast.error.generic'), 'error');
+        } else {
+          const td = await tr.json();
+          saved = td.module as Module;
+        }
+      }
+
+      setModules((prev) => [...prev.filter((m) => m.id !== saved.id), saved].sort((a, b) => a.order_index - b.order_index));
       setShowForm(false);
       setUploadedVideoId(null);
+      resetFormThumbnail();
       showToast(t('toast.module.created'), 'success');
     } catch {
       showToast(t('toast.error.generic'), 'error');
     } finally {
       setSavingModule(false);
     }
+  };
+
+  const handleRowThumbnailInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const moduleId = rowThumbnailModuleIdRef.current;
+    e.target.value = '';
+    rowThumbnailModuleIdRef.current = null;
+    if (!file || !moduleId) return;
+
+    if (!IMAGE_TYPES.includes(file.type)) {
+      showToast(t('videos.thumbnail.error.format'), 'error');
+      return;
+    }
+    if (file.size > THUMBNAIL_MAX_BYTES) {
+      showToast(t('videos.thumbnail.error.size'), 'error');
+      return;
+    }
+
+    setThumbnailUploadingId(moduleId);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const tr = await fetch(`/api/admin/modules/${moduleId}/thumbnail`, { method: 'POST', body: fd });
+      if (!tr.ok) throw new Error('thumbnail failed');
+      const td = await tr.json();
+      const updated = td.module as Module;
+      setModules((prev) => prev.map((m) => (m.id === moduleId ? { ...m, ...updated } : m)));
+      showToast(t('toast.thumbnail.updated'), 'success');
+    } catch {
+      showToast(t('toast.error.generic'), 'error');
+    } finally {
+      setThumbnailUploadingId(null);
+    }
+  };
+
+  const openRowThumbnailPicker = (moduleId: string) => {
+    rowThumbnailModuleIdRef.current = moduleId;
+    rowThumbnailInputRef.current?.click();
   };
 
   const handleDelete = async () => {
@@ -247,6 +338,14 @@ export function VideosTab() {
           {t('videos.title')}
         </h1>
       </div>
+
+      <input
+        ref={rowThumbnailInputRef}
+        type="file"
+        accept={IMAGE_TYPES.join(',')}
+        className="hidden"
+        onChange={handleRowThumbnailInputChange}
+      />
 
       {/* Upload Zone */}
       {!showForm ? (
@@ -294,6 +393,7 @@ export function VideosTab() {
                 className="hidden"
               />
               <button
+                type="button"
                 onClick={() => fileInputRef.current?.click()}
                 className="px-6 py-2.5 bg-silver-blue text-white rounded-xl text-sm font-semibold hover:bg-silver-blue-hover transition-colors shadow-sm"
                 style={{ fontFamily: 'Poppins, sans-serif' }}
@@ -356,15 +456,55 @@ export function VideosTab() {
               </div>
             </div>
           </div>
+
+          <div className="mt-6 pt-6 border-t border-beige-skin/50">
+            <label className="block text-sm font-medium text-cherry-brown mb-2" style={{ fontFamily: 'Raleway, sans-serif' }}>
+              {t('videos.thumbnail.optional')}
+            </label>
+            <div className="flex flex-wrap items-center gap-4">
+              <input
+                ref={thumbnailInputRef}
+                type="file"
+                accept={IMAGE_TYPES.join(',')}
+                className="hidden"
+                onChange={(e) => handleThumbnailSelected(e.target.files?.[0])}
+              />
+              <button
+                type="button"
+                onClick={() => thumbnailInputRef.current?.click()}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-input-border text-sm font-semibold text-cherry-brown hover:bg-snow-white transition-colors"
+                style={{ fontFamily: 'Poppins, sans-serif' }}
+              >
+                <ImageIcon className="w-4 h-4 text-silver-blue" />
+                {t('videos.thumbnail.browse')}
+              </button>
+              {thumbnailPreview && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={thumbnailPreview} alt="" className="h-16 w-28 object-cover rounded-lg border border-input-border" />
+              )}
+              {thumbnailFile && (
+                <button
+                  type="button"
+                  onClick={resetFormThumbnail}
+                  className="text-xs font-semibold text-muted-fg hover:text-destructive"
+                >
+                  {t('videos.thumbnail.remove')}
+                </button>
+              )}
+            </div>
+          </div>
+
           <div className="flex justify-end mt-6 gap-3">
             <button
-              onClick={() => { setShowForm(false); setUploadedVideoId(null); }}
+              type="button"
+              onClick={() => { setShowForm(false); setUploadedVideoId(null); resetFormThumbnail(); }}
               className="px-6 py-2.5 text-sm font-semibold rounded-lg border border-input-border text-cherry-brown hover:bg-snow-white transition-colors"
               style={{ fontFamily: 'Poppins, sans-serif' }}
             >
               {t('modal.cancel')}
             </button>
             <button
+              type="button"
               onClick={handleSaveModule}
               disabled={savingModule}
               className="flex items-center gap-2 px-6 py-2.5 bg-silver-blue text-white rounded-xl text-sm font-semibold hover:bg-silver-blue-hover transition-colors shadow-sm disabled:opacity-50"
@@ -386,6 +526,9 @@ export function VideosTab() {
                 <th className="px-6 py-4 text-left text-xs font-semibold text-muted-fg uppercase tracking-wider w-16" style={{ fontFamily: 'Poppins, sans-serif' }}>
                   {t('videos.col.order')}
                 </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-muted-fg uppercase tracking-wider w-28" style={{ fontFamily: 'Poppins, sans-serif' }}>
+                  {t('videos.col.thumbnail')}
+                </th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-muted-fg uppercase tracking-wider" style={{ fontFamily: 'Poppins, sans-serif' }}>
                   {t('videos.col.title')}
                 </th>
@@ -400,7 +543,7 @@ export function VideosTab() {
             <tbody className="divide-y divide-beige-skin/50">
               {modules.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-6 py-12 text-center text-muted-fg text-sm">
+                  <td colSpan={5} className="px-6 py-12 text-center text-muted-fg text-sm">
                     {t('videos.title')} — No modules yet
                   </td>
                 </tr>
@@ -409,8 +552,8 @@ export function VideosTab() {
                   <tr
                     key={module.id}
                     className="hover:bg-snow-white/50 transition-colors"
-                    style={{ 
-                      animationDelay: `${index * 50}ms`, 
+                    style={{
+                      animationDelay: `${index * 50}ms`,
                       animationName: 'fadeIn',
                       animationDuration: '0.3s',
                       animationTimingFunction: 'ease-out',
@@ -420,9 +563,40 @@ export function VideosTab() {
                     <td className="px-6 py-4 text-sm font-medium text-cherry-brown">
                       {module.order_index}
                     </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2">
+                        {module.thumbnail_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={module.thumbnail_url}
+                            alt=""
+                            className="h-12 w-20 object-cover rounded-md border border-input-border bg-snow-white"
+                          />
+                        ) : (
+                          <div className="h-12 w-20 rounded-md border border-dashed border-input-border bg-snow-white flex items-center justify-center">
+                            <ImageIcon className="w-5 h-5 text-muted-fg/50" />
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          disabled={thumbnailUploadingId === module.id}
+                          onClick={() => openRowThumbnailPicker(module.id)}
+                          className="text-xs font-semibold text-silver-blue hover:underline disabled:opacity-50"
+                          style={{ fontFamily: 'Poppins, sans-serif' }}
+                        >
+                          {thumbnailUploadingId === module.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin inline" />
+                          ) : module.thumbnail_url ? (
+                            t('videos.thumbnail.replace')
+                          ) : (
+                            t('videos.thumbnail.upload')
+                          )}
+                        </button>
+                      </div>
+                    </td>
                     <td className="px-6 py-4 text-sm font-medium text-cherry-brown">
                       <div className="flex items-center gap-2">
-                        <PlayCircle className="w-4 h-4 text-silver-blue" />
+                        <PlayCircle className="w-4 h-4 text-silver-blue shrink-0" />
                         {module.title}
                       </div>
                     </td>
@@ -431,6 +605,7 @@ export function VideosTab() {
                     </td>
                     <td className="px-6 py-4 text-right">
                       <button
+                        type="button"
                         onClick={() => setDeleteTarget(module)}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-destructive bg-destructive-bg rounded-lg hover:bg-red-100 transition-colors"
                         style={{ fontFamily: 'Poppins, sans-serif' }}
@@ -461,6 +636,3 @@ export function VideosTab() {
     </div>
   );
 }
-
-// Ensure CheckCircle is imported correctly
-import { CheckCircle } from 'lucide-react';
