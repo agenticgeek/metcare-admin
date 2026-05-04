@@ -15,10 +15,9 @@ export async function POST(request: Request) {
 
     const { uploadLength } = await request.json();
     const origin = request.headers.get('origin') || 'http://localhost:3000';
-
-    // Cloudflare allowedOrigins can be picky. We'll provide both with and without protocols.
     const cleanOrigin = origin.replace(/^https?:\/\//, '').replace(/\/$/, '');
 
+    // 1. Initiate the TUS upload
     const cfResponse = await fetch(
       `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/stream`,
       {
@@ -31,16 +30,12 @@ export async function POST(request: Request) {
         },
         body: JSON.stringify({
           allowedOrigins: [
-            origin,         // e.g. "http://localhost:3000"
-            cleanOrigin,    // e.g. "localhost:3000"
+            origin,
+            cleanOrigin,
             'localhost',
             'metcare-admin.vercel.app',
             'met-academy-admin.vercel.app',
-            'https://metcare-admin.vercel.app',
-            'https://met-academy-admin.vercel.app',
-            'metcare-admin-git-uzair-agentumais-projects.vercel.app',
-            'https://metcare-admin-git-uzair-agentumais-projects.vercel.app'
-
+            'metcare-admin-git-uzair-agentumais-projects.vercel.app'
           ],
         })
       }
@@ -52,11 +47,14 @@ export async function POST(request: Request) {
     }
 
     const uid = cfResponse.headers.get('stream-media-id');
-    const tusUploadUrl = cfResponse.headers.get('location');
-
-    if (!uid || !tusUploadUrl) {
-      return NextResponse.json({ error: 'No upload URL returned' }, { status: 500 });
+    
+    if (!uid) {
+      return NextResponse.json({ error: 'No stream-media-id returned' }, { status: 500 });
     }
+
+    // 2. CRITICAL: Construct the DIRECT URL instead of using the Gateway link
+    // This bypasses the edge-production.gateway which is causing the CORS failures
+    const tusUploadUrl = `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/media/${uid}?tusv2=true`;
 
     return NextResponse.json({ tusUploadUrl, uid });
   } catch (err: any) {
