@@ -20,8 +20,8 @@ export async function PATCH(request: Request) {
     const CF_ACCOUNT_ID = process.env.CF_ACCOUNT_ID;
     const CF_STREAM_API_TOKEN = process.env.CF_STREAM_API_TOKEN;
 
-    if (!CF_ACCOUNT_ID) {
-      return NextResponse.json({ error: 'Proxy Error: Missing CF_ACCOUNT_ID env' }, { status: 500 });
+    if (!CF_ACCOUNT_ID || !CF_STREAM_API_TOKEN) {
+      return NextResponse.json({ error: 'Proxy Error: Missing Cloudflare env vars' }, { status: 500 });
     }
 
     const uploadURL = `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/media/${uid}?tusv2=true`;
@@ -30,7 +30,7 @@ export async function PATCH(request: Request) {
     const cfResponse = await fetch(uploadURL, {
       method: 'PATCH',
       headers: {
-        // REMOVED Authorization header - the tokenized URL should handle itself
+        'Authorization': `Bearer ${CF_STREAM_API_TOKEN}`,
         'Tus-Resumable': '1.0.0',
         'Upload-Offset': offset || '0',
         'Content-Type': 'application/offset+octet-stream',
