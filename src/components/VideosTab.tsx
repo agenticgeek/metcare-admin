@@ -139,7 +139,7 @@ export function VideosTab() {
       const { uploadURL, uid } = await urlRes.json();
 
       // Step 2: Manual Chunked TUS Upload (Bypasses library HEAD checks)
-      const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks
+      const CHUNK_SIZE = 4 * 1024 * 1024; // 4MB chunks (Safe for Vercel 4.5MB limit)
       let offset = 0;
 
       while (offset < file.size) {
