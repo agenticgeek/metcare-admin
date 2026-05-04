@@ -43,7 +43,16 @@
   "videos.col.order": "N°",
   "videos.col.title": "Titre",
   "videos.col.duration": "Durée",
+  "videos.col.thumbnail": "Vignette",
   "videos.col.actions": "Actions",
+  "videos.thumbnail.optional": "Image de vignette (facultatif)",
+  "videos.thumbnail.browse": "Choisir une image",
+  "videos.thumbnail.upload": "Téléverser la vignette",
+  "videos.thumbnail.uploading": "Téléversement…",
+  "videos.thumbnail.replace": "Remplacer",
+  "videos.thumbnail.remove": "Retirer",
+  "videos.thumbnail.error.format": "Utilisez JPEG, PNG, WebP ou GIF",
+  "videos.thumbnail.error.size": "L’image doit faire 5 Mo ou moins",
   "videos.action.delete": "Supprimer",
   "videos.confirm.delete": "Supprimer ce module ?",
   "videos.confirm.delete.desc": "Le fichier vidéo sera définitivement supprimé.",
@@ -58,5 +67,6 @@
   "toast.user.deleted": "Utilisateur supprimé",
   "toast.module.created": "Module enregistré",
   "toast.module.deleted": "Module supprimé",
+  "toast.thumbnail.updated": "Vignette mise à jour",
   "toast.error.generic": "Une erreur est survenue"
 }

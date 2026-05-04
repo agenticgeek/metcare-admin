@@ -13,14 +13,40 @@ export async function POST(request: Request) {
       );
     }
 
+    const normalizedEmail = email.toLowerCase().trim();
+
+    // Local dev only: skip DB when credentials match .env.local (never set these in production)
+    const localEmail = process.env.LOCAL_ADMIN_EMAIL?.toLowerCase().trim();
+    const localPassword = process.env.LOCAL_ADMIN_PASSWORD;
+    if (
+      process.env.NODE_ENV === 'development' &&
+      localEmail &&
+      localPassword &&
+      normalizedEmail === localEmail &&
+      password === localPassword
+    ) {
+      const token = signAdminJWT({
+        id: '00000000-0000-4000-8000-000000000001',
+        email: normalizedEmail,
+        role: 'admin',
+      });
+      const cookieOptions = getSessionCookieOptions();
+      const response = NextResponse.json({ success: true });
+      response.cookies.set({ ...cookieOptions, value: token });
+      return response;
+    }
+
     // Fetch admin row by email from admins table
     const { data: admin, error } = await supabaseAdmin
       .from('admins')
       .select('id, email, password_hash')
-      .eq('email', email.toLowerCase().trim())
+      .eq('email', normalizedEmail)
       .single();
 
     if (error || !admin) {
+      if (process.env.NODE_ENV === 'development' && error) {
+        console.error('[admin/login] admins lookup failed:', error.message, error.code, error.details);
+      }
       return NextResponse.json(
         { error: 'Invalid credentials' },
         { status: 401 }
@@ -54,7 +80,10 @@ export async function POST(request: Request) {
 
     // Never return password_hash in any response
     return response;
-  } catch {
+  } catch (err) {
+    if (process.env.NODE_ENV === 'development') {
+      console.error('[admin/login]', err);
+    }
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
