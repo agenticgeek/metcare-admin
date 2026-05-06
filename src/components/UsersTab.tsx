@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { UserPlus, RotateCcw, ShieldOff, Users, Loader2, TrashIcon } from 'lucide-react';
+import { UserPlus, RotateCcw, ShieldOff, Users, Loader2, TrashIcon, UserCheck } from 'lucide-react';
 import { Modal, AlertDialog } from './Modal';
 import { useToast } from './Toast';
 import { formatDate } from '@/lib/utils';
@@ -22,10 +22,12 @@ export function UsersTab() {
   const [loading, setLoading] = useState(true);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [disableTarget, setDisableTarget] = useState<User | null>(null);
+  const [activateTarget, setActivateTarget] = useState<User | null>(null);
   const [resendingId, setResendingId] = useState<string | null>(null);
   const [deleteConfirmUser, setDeleteConfirmUser] = useState<User | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [disabling, setDisabling] = useState(false);
+  const [activating, setActivating] = useState(false);
 
   // Form state
   const [formName, setFormName] = useState('');
@@ -95,14 +97,17 @@ export function UsersTab() {
       }
 
       const data = await res.json();
+      
+      // Update state in an order that avoids hydration/unmount issues
+      setCreating(false); 
       setUsers((prev) => [data.user, ...prev]);
       setIsCreateModalOpen(false);
       setFormName('');
       setFormEmail('');
       showToast(t('toast.user.created'), 'success');
+      return; // Exit early to avoid the finally block setting creating to false again
     } catch {
       showToast(t('toast.error.generic'), 'error');
-    } finally {
       setCreating(false);
     }
   };
@@ -143,6 +148,29 @@ export function UsersTab() {
     } finally {
       setDisabling(false);
       setDisableTarget(null);
+    }
+  };
+
+  const handleActivate = async () => {
+    if (!activateTarget) return;
+    setActivating(true);
+    try {
+      const res = await fetch(`/api/admin/users/${activateTarget.id}/activate`, {
+        method: 'PATCH',
+      });
+      if (res.ok) {
+        setUsers((prev) =>
+          prev.map((u) => (u.id === activateTarget.id ? { ...u, status: 'active' as const } : u))
+        );
+        showToast(t('toast.user.activated'), 'success');
+      } else {
+        showToast(t('toast.error.generic'), 'error');
+      }
+    } catch {
+      showToast(t('toast.error.generic'), 'error');
+    } finally {
+      setActivating(false);
+      setActivateTarget(null);
     }
   };
 
@@ -300,6 +328,17 @@ export function UsersTab() {
                             {t('users.action.disable')}
                           </button>
                         )}
+                        {user.status === 'disabled' && (
+                          <button
+                            id={`btn-activate-${user.id}`}
+                            onClick={() => setActivateTarget(user)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-status-active bg-status-active-bg rounded-lg hover:bg-green-100 transition-colors"
+                            style={{ fontFamily: 'Poppins, sans-serif' }}
+                          >
+                            <UserCheck className="w-3.5 h-3.5" />
+                            {t('users.action.activate')}
+                          </button>
+                        )}
                         <button
                           onClick={() => setDeleteConfirmUser(user)}
                           className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors"
@@ -391,8 +430,10 @@ export function UsersTab() {
               className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-silver-blue text-white hover:bg-silver-blue-hover transition-colors disabled:opacity-50"
               style={{ fontFamily: 'Poppins, sans-serif' }}
             >
-              {creating && <Loader2 className="w-4 h-4 animate-spin" />}
-              {t('modal.submit')}
+              <span className="flex items-center gap-2">
+                {creating && <Loader2 className="w-4 h-4 animate-spin" />}
+                {t('modal.submit')}
+              </span>
             </button>
           </div>
         </div>
@@ -409,6 +450,18 @@ export function UsersTab() {
         cancelText={t('modal.cancel')}
         isDestructive
         isLoading={disabling}
+      />
+
+      {/* Activate Confirmation Dialog */}
+      <AlertDialog
+        isOpen={!!activateTarget}
+        onClose={() => setActivateTarget(null)}
+        onConfirm={handleActivate}
+        title={t('users.confirm.activate')}
+        description={t('users.confirm.activate.desc')}
+        confirmText={t('users.action.activate')}
+        cancelText={t('modal.cancel')}
+        isLoading={activating}
       />
 
       {/* Delete Confirmation Dialog */}

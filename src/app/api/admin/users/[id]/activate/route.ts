@@ -14,19 +14,19 @@ export async function PATCH(
 
     const { id } = await params;
 
-    // Optimized: Update only if status is 'active' in a single round trip
+    // Optimized: Update only if status is 'disabled' in a single round trip
     const { data: user, error: updateError } = await supabaseAdmin
       .from('users')
-      .update({ status: 'disabled' })
+      .update({ status: 'active' })
       .eq('id', id)
-      .eq('status', 'active')
+      .eq('status', 'disabled')
       .select('id, status')
       .single();
 
     if (updateError) {
       if (updateError.code === 'PGRST116') { // No rows returned = condition not met
         return NextResponse.json(
-          { error: 'User not found or not in active status' },
+          { error: 'User not found or not in disabled status' },
           { status: 400 }
         );
       }

@@ -57,21 +57,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Video ID is required' }, { status: 400 });
     }
 
-    // Check for duplicate order_index
-    const { data: existing } = await supabaseAdmin
-      .from('modules')
-      .select('id')
-      .eq('order_index', order_index)
-      .single();
-
-    if (existing) {
-      return NextResponse.json(
-        { error: 'order_duplicate' },
-        { status: 409 }
-      );
-    }
-
-    // Insert module
+    // Insert module directly and let unique constraint handle duplicates
     const { data: module, error: insertError } = await supabaseAdmin
       .from('modules')
       .insert({
@@ -84,6 +70,12 @@ export async function POST(request: Request) {
       .single();
 
     if (insertError) {
+      if (insertError.code === '23505') { // Unique constraint violation
+        return NextResponse.json(
+          { error: 'order_duplicate' },
+          { status: 409 }
+        );
+      }
       return NextResponse.json({ error: insertError.message }, { status: 500 });
     }
 

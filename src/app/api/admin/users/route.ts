@@ -53,33 +53,25 @@ export async function POST(request: Request) {
 
     const normalizedEmail = email.toLowerCase().trim();
 
-    // Check for duplicate email
-    const { data: existing } = await supabaseAdmin
-      .from('users')
-      .select('id')
-      .eq('email', normalizedEmail)
-      .single();
-
-    if (existing) {
-      return NextResponse.json(
-        { error: 'duplicate_email', field: 'email' },
-        { status: 409 }
-      );
-    }
-
-    // Insert user with status = 'pending'
+    // Insert user directly and let unique constraint handle duplicates
     const { data: user, error: insertError } = await supabaseAdmin
       .from('users')
       .insert({
         full_name: full_name.trim(),
         email: normalizedEmail,
         status: 'pending',
-        password_hash: '', // Will be set during activation
+        password_hash: '', 
       })
       .select('id, full_name, email, status, created_at')
       .single();
 
     if (insertError) {
+      if (insertError.code === '23505') { // Unique constraint violation
+        return NextResponse.json(
+          { error: 'duplicate_email', field: 'email' },
+          { status: 409 }
+        );
+      }
       return NextResponse.json({ error: insertError.message }, { status: 500 });
     }
 
