@@ -18,12 +18,13 @@ export async function PATCH(
     const body = await request.json();
     const titleRaw = body.title;
     const orderRaw = body.order_index;
+    const moduleTypeRaw = body.module_type;
 
-    if (titleRaw === undefined && orderRaw === undefined) {
+    if (titleRaw === undefined && orderRaw === undefined && moduleTypeRaw === undefined) {
       return NextResponse.json({ error: 'No fields to update' }, { status: 400 });
     }
 
-    const updates: { title?: string; order_index?: number } = {};
+    const updates: { title?: string; order_index?: number; module_type?: string } = {};
 
     if (titleRaw !== undefined) {
       if (typeof titleRaw !== 'string' || !titleRaw.trim()) {
@@ -50,12 +51,19 @@ export async function PATCH(
       updates.order_index = orderRaw;
     }
 
+    if (moduleTypeRaw !== undefined) {
+      if (!['full-body', 'nurse-360'].includes(moduleTypeRaw)) {
+        return NextResponse.json({ error: 'Invalid module_type' }, { status: 400 });
+      }
+      updates.module_type = moduleTypeRaw;
+    }
+
     const { data: module, error: updateError } = await supabaseAdmin
       .from('modules')
       .update(updates)
       .eq('id', id)
       .select(
-        'id, order_index, title, description, video_id, duration_seconds, is_published, created_at, thumbnail_url'
+        'id, order_index, title, description, video_id, duration_seconds, is_published, created_at, thumbnail_url, module_type'
       )
       .single();
 

@@ -17,6 +17,7 @@ interface Module {
   duration_seconds: number | null;
   video_id: string;
   thumbnail_url?: string | null;
+  module_type?: 'full-body' | 'nurse-360';
 }
 
 export function VideosTab() {
@@ -38,7 +39,8 @@ export function VideosTab() {
   const [uploadedDuration, setUploadedDuration] = useState<number | null>(null);
   const [formTitle, setFormTitle] = useState('');
   const [formOrder, setFormOrder] = useState<string>('');
-  const [formErrors, setFormErrors] = useState<{ title?: string; order?: string }>({});
+  const [formModuleType, setFormModuleType] = useState<'full-body' | 'nurse-360'>('full-body');
+  const [formErrors, setFormErrors] = useState<{ title?: string; order?: string; moduleType?: string }>({});
   const [savingModule, setSavingModule] = useState(false);
   const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
   const [thumbnailPreview, setThumbnailPreview] = useState<string | null>(null);
@@ -55,7 +57,8 @@ export function VideosTab() {
   const [editModule, setEditModule] = useState<Module | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editOrder, setEditOrder] = useState('');
-  const [editErrors, setEditErrors] = useState<{ title?: string; order?: string }>({});
+  const [editModuleType, setEditModuleType] = useState<'full-body' | 'nurse-360'>('full-body');
+  const [editErrors, setEditErrors] = useState<{ title?: string; order?: string; moduleType?: string }>({});
   const [savingEdit, setSavingEdit] = useState(false);
 
   const fetchModules = useCallback(async () => {
@@ -219,6 +222,7 @@ export function VideosTab() {
       // Step 4: Show form
       setFormTitle(file.name.replace(/\.[^/.]+$/, '')); // default title
       setFormOrder((modules.length > 0 ? Math.max(...modules.map(m => m.order_index)) + 1 : 1).toString());
+      setFormModuleType('full-body');
       resetFormThumbnail();
       setShowForm(true);
     } catch (err) {
@@ -248,9 +252,10 @@ export function VideosTab() {
   };
 
   const handleSaveModule = async () => {
-    const errors: { title?: string; order?: string } = {};
+    const errors: { title?: string; order?: string; moduleType?: string } = {};
     if (!formTitle.trim()) errors.title = t('modal.error.required');
     if (!formOrder || isNaN(Number(formOrder))) errors.order = t('modal.error.required');
+    if (!formModuleType) errors.moduleType = t('modal.error.required');
 
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors);
@@ -269,6 +274,7 @@ export function VideosTab() {
           order_index: parseInt(formOrder, 10),
           video_id: uploadedVideoId,
           duration_seconds: uploadedDuration,
+          module_type: formModuleType,
         }),
       });
 
@@ -348,6 +354,7 @@ export function VideosTab() {
     setEditModule(m);
     setEditTitle(m.title);
     setEditOrder(String(m.order_index));
+    setEditModuleType(m.module_type || 'full-body');
     setEditErrors({});
   };
 
@@ -362,10 +369,11 @@ export function VideosTab() {
   const handleSaveEditModule = async () => {
     if (!editModule) return;
 
-    const errors: { title?: string; order?: string } = {};
+    const errors: { title?: string; order?: string; moduleType?: string } = {};
     if (!editTitle.trim()) errors.title = t('modal.error.required');
     const orderTrimmed = editOrder.trim();
     if (!orderTrimmed || !/^-?\d+$/.test(orderTrimmed)) errors.order = t('modal.error.required');
+    if (!editModuleType) errors.moduleType = t('modal.error.required');
 
     if (Object.keys(errors).length > 0) {
       setEditErrors(errors);
@@ -384,6 +392,7 @@ export function VideosTab() {
         body: JSON.stringify({
           title: editTitle.trim(),
           order_index: orderNum,
+          module_type: editModuleType,
         }),
       });
 
@@ -520,7 +529,7 @@ export function VideosTab() {
               {t('videos.upload.success')}
             </h3>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="block text-sm font-medium text-cherry-brown mb-1.5" style={{ fontFamily: 'Raleway, sans-serif' }}>
                 {t('videos.form.title')}
@@ -561,6 +570,22 @@ export function VideosTab() {
                   <span>{formatDuration(uploadedDuration)}</span>
                 )}
               </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-cherry-brown mb-1.5" style={{ fontFamily: 'Raleway, sans-serif' }}>
+                Module Type <span className="text-destructive">*</span>
+              </label>
+              <select
+                value={formModuleType}
+                onChange={(e) => { setFormModuleType(e.target.value as 'full-body' | 'nurse-360'); setFormErrors((p) => ({ ...p, moduleType: undefined })); }}
+                className={`w-full px-4 py-2.5 rounded-xl border text-sm transition-colors ${formErrors.moduleType ? 'border-destructive' : 'border-input-border'}`}
+                style={{ fontFamily: 'Raleway, sans-serif' }}
+              >
+                <option value="">Select a type...</option>
+                <option value="full-body">Full Body</option>
+                <option value="nurse-360">Nurse 360</option>
+              </select>
+              {formErrors.moduleType && <p className="mt-1 text-xs text-destructive">{formErrors.moduleType}</p>}
             </div>
           </div>
 
@@ -639,6 +664,9 @@ export function VideosTab() {
                 <th className="px-6 py-4 text-left text-xs font-semibold text-muted-fg uppercase tracking-wider min-w-[250px]" style={{ fontFamily: 'Poppins, sans-serif' }}>
                   {t('videos.col.title')}
                 </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-muted-fg uppercase tracking-wider w-32 min-w-[150px]" style={{ fontFamily: 'Poppins, sans-serif' }}>
+                  Type
+                </th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-muted-fg uppercase tracking-wider w-24 min-w-[120px]" style={{ fontFamily: 'Poppins, sans-serif' }}>
                   {t('videos.col.duration')}
                 </th>
@@ -650,7 +678,7 @@ export function VideosTab() {
             <tbody className="divide-y divide-beige-skin/50">
               {modules.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-muted-fg text-sm">
+                  <td colSpan={6} className="px-6 py-12 text-center text-muted-fg text-sm">
                     {t('videos.title')} — No modules yet
                   </td>
                 </tr>
@@ -706,6 +734,15 @@ export function VideosTab() {
                         <PlayCircle className="w-4 h-4 text-silver-blue shrink-0" />
                         {module.title}
                       </div>
+                    </td>
+                    <td className="px-6 py-4 text-sm">
+                      <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                        module.module_type === 'nurse-360'
+                          ? 'bg-purple-100 text-purple-700'
+                          : 'bg-blue-100 text-blue-700'
+                      }`}>
+                        {module.module_type === 'nurse-360' ? 'Nurse 360' : 'Full Body'}
+                      </span>
                     </td>
                     <td className="px-6 py-4 text-sm text-muted-fg">
                       {formatDuration(module.duration_seconds)}
@@ -777,6 +814,22 @@ export function VideosTab() {
               style={{ fontFamily: 'Raleway, sans-serif' }}
             />
             {editErrors.order && <p className="mt-1 text-xs text-destructive">{editErrors.order}</p>}
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-cherry-brown mb-1.5" style={{ fontFamily: 'Raleway, sans-serif' }}>
+              Module Type <span className="text-destructive">*</span>
+            </label>
+            <select
+              value={editModuleType}
+              onChange={(e) => { setEditModuleType(e.target.value as 'full-body' | 'nurse-360'); setEditErrors((p) => ({ ...p, moduleType: undefined })); }}
+              className={`w-full px-4 py-2.5 rounded-xl border text-sm transition-colors ${editErrors.moduleType ? 'border-destructive' : 'border-input-border'}`}
+              style={{ fontFamily: 'Raleway, sans-serif' }}
+            >
+              <option value="">Select a type...</option>
+              <option value="full-body">Full Body</option>
+              <option value="nurse-360">Nurse 360</option>
+            </select>
+            {editErrors.moduleType && <p className="mt-1 text-xs text-destructive">{editErrors.moduleType}</p>}
           </div>
           <div className="flex justify-end gap-3 pt-2">
             <button
